@@ -45,6 +45,19 @@ describe("schema", () => {
     expect(migration).toContain("disposal_no_update");
   });
 
+  it("creates SQL helper functions only after the tables they read", () => {
+    const memberFn = migration.indexOf("function public.is_org_member");
+    const permissionFn = migration.indexOf("function public.has_org_permission");
+    const memberships = migration.indexOf("create table if not exists public.memberships");
+    const permissions = migration.indexOf("create table if not exists public.role_permissions");
+    const assetState = migration.indexOf("function public.asset_state");
+    const assets = migration.indexOf("create table if not exists public.assets");
+    expect(memberFn).toBeGreaterThan(memberships);
+    expect(permissionFn).toBeGreaterThan(permissions);
+    expect(permissionFn).toBeGreaterThan(memberships);
+    expect(assetState).toBeGreaterThan(assets);
+  });
+
   it("stores plans and does not treat them as prices", () => {
     expect(migration).toContain("'internal'");
     expect(migration).toContain("Not a price and not enforced");

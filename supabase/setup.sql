@@ -47,37 +47,9 @@ begin
 end;
 $$;
 
-create or replace function public.is_org_member(p_org uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.memberships m
-    where m.organization_id = p_org
-      and m.user_id = auth.uid()
-  );
-$$;
-
-create or replace function public.has_org_permission(p_org uuid, p_permission text)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.memberships m
-    join public.role_permissions rp on rp.role_id = m.role_id
-    where m.organization_id = p_org
-      and m.user_id = auth.uid()
-      and rp.permission = p_permission
-  );
-$$;
+-- is_org_member and has_org_permission are created after memberships and
+-- role_permissions. They are LANGUAGE sql, and Postgres checks those tables
+-- at create time. A plpgsql body would wait until the function is called.
 
 -- ---------------------------------------------------------------------------
 -- Plans. Numbers are placeholders and are not enforced.
@@ -204,6 +176,39 @@ create table if not exists public.memberships (
   updated_at timestamptz not null default now(),
   unique (organization_id, user_id)
 );
+
+-- SQL functions: the tables they read must already exist.
+create or replace function public.is_org_member(p_org uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.memberships m
+    where m.organization_id = p_org
+      and m.user_id = auth.uid()
+  );
+$$;
+
+create or replace function public.has_org_permission(p_org uuid, p_permission text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.memberships m
+    join public.role_permissions rp on rp.role_id = m.role_id
+    where m.organization_id = p_org
+      and m.user_id = auth.uid()
+      and rp.permission = p_permission
+  );
+$$;
 
 create table if not exists public.invites (
   id uuid primary key default gen_random_uuid(),
