@@ -1,8 +1,8 @@
-import type { AssetType, CustomFieldDef } from "./types";
+import type { BuiltinAssetType, CustomFieldDef } from "./types";
 
 const NONE: CustomFieldDef[] = [];
 
-export const CUSTOM_FIELDS: Record<AssetType, readonly CustomFieldDef[]> = {
+export const CUSTOM_FIELDS: Record<BuiltinAssetType, readonly CustomFieldDef[]> = {
   equipment: NONE,
   tool: NONE,
   trailer: [
@@ -22,12 +22,13 @@ export const CUSTOM_FIELDS: Record<AssetType, readonly CustomFieldDef[]> = {
   ],
 };
 
-export function fieldsFor(type: AssetType): readonly CustomFieldDef[] {
-  return CUSTOM_FIELDS[type];
+export function fieldsFor(type: string): readonly CustomFieldDef[] {
+  if (type in CUSTOM_FIELDS) return CUSTOM_FIELDS[type as BuiltinAssetType];
+  return NONE;
 }
 
 /** Keep only known keys for the type. Blank values are dropped. */
-export function cleanCustomFields(type: AssetType, input: Record<string, string>): Record<string, string> {
+export function cleanCustomFields(type: string, input: Record<string, string>): Record<string, string> {
   const allowed = new Map(fieldsFor(type).map((field) => [field.key, field]));
   const cleaned: Record<string, string> = {};
   for (const [key, value] of Object.entries(input)) {
@@ -40,6 +41,6 @@ export function cleanCustomFields(type: AssetType, input: Record<string, string>
   return cleaned;
 }
 
-export function emptyCustomFields(type: AssetType): Record<string, string> {
+export function emptyCustomFields(type: string): Record<string, string> {
   return Object.fromEntries(fieldsFor(type).map((field) => [field.key, ""]));
 }

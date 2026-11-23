@@ -1,5 +1,5 @@
 import { AssetForm } from "@/components/assets/AssetForm";
-import { blankAssetInput, listAssets, listLocations } from "@/lib/data";
+import { blankAssetInput, listAssets, listFieldDefinitions, listLocations, listTypes } from "@/lib/data";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -13,9 +13,11 @@ export default async function NewAssetPage() {
   }
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
-  const [locations, assets] = await Promise.all([
+  const [locations, assets, types, fieldDefinitions] = await Promise.all([
     listLocations(supabase, active.organization.id),
     listAssets(supabase, active.organization.id),
+    listTypes(supabase, active.organization.id),
+    listFieldDefinitions(supabase, active.organization.id),
   ]);
   return (
     <main className="mx-auto max-w-xl px-4 py-6">
@@ -26,6 +28,8 @@ export default async function NewAssetPage() {
         initial={blankAssetInput()}
         locations={locations}
         parents={assets.map((asset) => ({ id: asset.id, name: asset.name, tag_id: asset.tag_id }))}
+        types={types}
+        fieldDefinitions={fieldDefinitions}
       />
     </main>
   );

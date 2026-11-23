@@ -65,6 +65,8 @@ Do not put the **service_role** key in the public site settings. This version do
    | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | The publishable key, if you have one |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The anon key, if you do not have a publishable key. You can set both. If both are set, the publishable key is used. |
    | `NEXT_PUBLIC_SITE_URL` | The production site address, such as `https://your-project.vercel.app`, with no slash at the end. |
+   | `RESEND_API_KEY` | Optional. From [Resend](https://resend.com). Leave blank and notification email is skipped. |
+   | `NOTIFY_FROM` | Optional. A sender on a domain you verified in Resend, such as `Asset Tracker <assets@yourdomain.com>`. |
 
 5. Set `NEXT_PUBLIC_SITE_URL` for **Production** only. Leave it empty on Preview. Preview deployments then use their own address for sign-in links.
 6. Deploy.
@@ -72,6 +74,21 @@ Do not put the **service_role** key in the public site settings. This version do
 If those variables are missing, the site still opens. It shows a setup screen instead of an error.
 
 `SUPABASE_SERVICE_ROLE_KEY` is listed in `.env.example` and is optional. Do not add it unless a later version tells you to. It must never be a `NEXT_PUBLIC_` variable.
+
+### If the database already exists
+
+Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, and the super-user permission. It does not erase equipment or people.
+
+### Auth email through Resend
+
+Supabase’s built-in mail sender is easy to hit a rate limit on. To send signup and password mail through Resend:
+
+1. In Resend, verify the domain you will send from.
+2. In Supabase, open **Authentication** → **Emails** → **SMTP Settings** and turn on a custom SMTP server.
+3. Host `smtp.resend.com`, port `465`, username `resend`, password your Resend API key.
+4. Sender email and name must match a verified Resend sender.
+
+Check-out, check-in, and status emails use `RESEND_API_KEY` and `NOTIFY_FROM` in Vercel. They are separate from the Supabase SMTP setting. With those two variables empty, the app writes a log line and does not send.
 
 ## 6. Try it on your computer (optional)
 

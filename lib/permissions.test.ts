@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { PERMISSIONS, ROLE_SEEDS, can, canViewRegister } from "./permissions";
+import { PERMISSIONS, ROLE_SEEDS, can, canViewRegister, permissionsFor } from "./permissions";
 
 describe("role matrix", () => {
   it("gives admins every capability except the assigned-only restriction", () => {
@@ -24,6 +24,15 @@ describe("role matrix", () => {
     expect(kiosk).toMatchObject({ active: true, assignable: false });
     expect(kiosk?.permissions).toContain(PERMISSIONS.stockTake);
     expect(kiosk?.permissions).not.toContain(PERMISSIONS.assetsView);
+  });
+
+  it("gives only admins the super-user settings permission", () => {
+    expect(can(permissionsFor("admin"), PERMISSIONS.settingsManage)).toBe(true);
+    for (const role of ["manager", "editor", "requester", "viewer", "kiosk", "field_tech", "auditor"]) {
+      expect(can(permissionsFor(role), PERMISSIONS.settingsManage)).toBe(false);
+    }
+    expect(can(permissionsFor("editor"), PERMISSIONS.peopleManage)).toBe(false);
+    expect(can(permissionsFor("manager"), PERMISSIONS.locationsManage)).toBe(false);
   });
 
   it("lets viewers look and stops them from editing", () => {

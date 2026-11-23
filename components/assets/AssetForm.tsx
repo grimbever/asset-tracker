@@ -3,10 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 import { Banner, Button, Field, TextInput } from "@/components/ui";
-import { fieldsFor } from "@/lib/assets/fields";
-import { ASSET_TYPES, type AssetInput, type AssetType } from "@/lib/assets/types";
+import type { AssetInput } from "@/lib/assets/types";
 import { createAsset, updateAsset } from "@/lib/data";
-import type { LocationRecord } from "@/lib/data";
+import type { FieldDefinition, LocationRecord, LookupRecord } from "@/lib/data";
 import { messageFrom } from "@/lib/data/errors";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -18,18 +17,26 @@ export function AssetForm({
   initial,
   locations,
   parents,
+  types,
+  fieldDefinitions,
 }: {
   organizationId: string;
   assetId?: string;
   initial: AssetInput;
   locations: LocationRecord[];
   parents: ParentOption[];
+  types: LookupRecord[];
+  fieldDefinitions: FieldDefinition[];
 }) {
   const router = useRouter();
   const [input, setInput] = useState<AssetInput>(initial);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const fields = useMemo(() => fieldsFor(input.type), [input.type]);
+  const fields = useMemo(
+    () => fieldDefinitions.filter((field) => field.type_key === input.type && !field.archived_at),
+    [fieldDefinitions, input.type],
+  );
+  const typeOptions = types.filter((type) => !type.archived_at || type.key === input.type);
 
   function patch(partial: Partial<AssetInput>) {
     setInput((current) => ({ ...current, ...partial }));
@@ -62,11 +69,11 @@ export function AssetForm({
         <select
           required
           value={input.type}
-          onChange={(event) => patch({ type: event.target.value as AssetType, customFields: {} })}
+          onChange={(event) => patch({ type: event.target.value, customFields: {} })}
           className="min-h-12 w-full rounded-2xl border border-line bg-card px-3"
         >
-          {ASSET_TYPES.map((type) => (
-            <option key={type.id} value={type.id}>
+          {typeOptions.map((type) => (
+            <option key={type.id} value={type.key}>
               {type.label}
             </option>
           ))}

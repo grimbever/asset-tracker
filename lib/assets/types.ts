@@ -6,7 +6,8 @@ export const ASSET_TYPES = [
   { id: "it", label: "IT / electronics" },
 ] as const;
 
-export type AssetType = (typeof ASSET_TYPES)[number]["id"];
+export type BuiltinAssetType = (typeof ASSET_TYPES)[number]["id"];
+export type AssetType = string;
 
 export const ASSET_STATUSES = [
   { id: "available", label: "Available" },
@@ -19,7 +20,7 @@ export const ASSET_STATUSES = [
   { id: "destroyed", label: "Destroyed" },
 ] as const;
 
-export type AssetStatus = (typeof ASSET_STATUSES)[number]["id"];
+export type AssetStatus = string;
 
 export type CustomFieldKind = "text" | "date";
 
@@ -50,6 +51,7 @@ export type AssetRecord = {
   parent_asset_id: string | null;
   checkout_as_unit: boolean;
   custom_fields: Record<string, string>;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -81,10 +83,10 @@ export function assetStatusLabel(status: string): string {
   return ASSET_STATUSES.find((item) => item.id === status)?.label ?? status;
 }
 
-export function isAssetType(value: string): value is AssetType {
-  return ASSET_TYPES.some((item) => item.id === value);
+export function isAssetType(value: string): boolean {
+  return value.trim().length > 0;
 }
 
-export function isAssetStatus(value: string): value is AssetStatus {
-  return ASSET_STATUSES.some((item) => item.id === value);
+export function isAssetStatus(value: string): boolean {
+  return value.trim().length > 0;
 }

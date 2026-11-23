@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { StatusPill } from "@/components/assets/StatusPill";
 import { Banner, Button, Field, TextInput } from "@/components/ui";
+import { HistoryList } from "@/components/history/HistoryList";
 import { fieldsFor } from "@/lib/assets/fields";
-import { eventSummary } from "@/lib/assets/events";
+import { deliverNotification } from "@/app/notify/actions";
 import type { AssetEvent } from "@/lib/assets/events";
 import { assetTypeLabel, type AssetRecord, type AssetStatus } from "@/lib/assets/types";
 import { PHOTO_MAX_EDGE_PX } from "@/lib/config";
@@ -22,7 +23,7 @@ import {
 } from "@/lib/data";
 import type { AttachmentRecord, EmployeeRecord, LocationRecord } from "@/lib/data";
 import { messageFrom } from "@/lib/data/errors";
-import { formatDate, formatMoney, formatWhen } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { photoRejection } from "@/lib/photos";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { saveLabelJob } from "@/lib/labels/job";
@@ -42,6 +43,8 @@ export function AssetScreen({
   userId,
   displayName,
   timeZone,
+  statuses = [],
+  fieldDefinitions = [],
 }: {
   asset: AssetRecord;
   pieces: AssetRecord[];
@@ -56,6 +59,8 @@ export function AssetScreen({
   userId: string;
   displayName: string;
   timeZone: string;
+  statuses?: { key: string; label: string; archived_at: string | null }[];
+  fieldDefinitions?: { key: string; label: string; kind: string; type_key: string; archived_at: string | null }[];
 }) {
   const router = useRouter();
   const [panel, setPanel] = useState<"checkout" | "move" | "issue" | "damage" | "delete" | null>(null);
@@ -72,7 +77,18 @@ export function AssetScreen({
   const canWrite = can(permissions, PERMISSIONS.assetsWrite);
   const canMove = can(permissions, PERMISSIONS.assetsMove);
   const canMaintain = can(permissions, PERMISSIONS.assetsMaintain) || canWrite;
-  const activePeople = employees.filter((person) => person.active);
+  const activePeople = employees.filter((person) => person.active && !person.archived_at);
+  const openLocations = locations.filter((location) => !location.archived_at);
+  const issueStatuses = (statuses.length ? statuses : [
+    { key: "broken", label: "Broken", archived_at: null },
+    { key: "in_repair", label: "In repair", archived_at: null },
+    { key: "missing", label: "Missing", archived_at: null },
+  ]).filter((status) => !status.archived_at && status.key !== "checked_out" && status.key !== "available");
+  const detailFields = fieldDefinitions.filter((field) => field.type_key === asset.type);
+
+  async function notify(eventId: string) {
+    await deliverNotification(eventId);
+  }
 
   async function run(action: () => Promise<void>) {
     const supabase = getBrowserSupabase();
@@ -94,11 +110,12 @@ export function AssetScreen({
     await run(async () => {
       const supabase = getBrowserSupabase();
       if (!supabase) return;
-      await checkoutAsset(supabase, asset, pieces.map((child) => child.id), {
+      const result = await checkoutAsset(supabase, asset, pieces.map((child) => child.id), {
         employeeId: targetKind === "person" ? employeeId : null,
         locationId: targetKind === "location" ? locationId : null,
         dueOn: dueOn || null,
       });
+      await notify(result.eventId);
       setPanel(null);
       setMessage(asset.checkout_as_unit && pieces.length ? "Kit checked out." : "Checked out.");
     });
@@ -108,7 +125,8 @@ export function AssetScreen({
     await run(async () => {
       const supabase = getBrowserSupabase();
       if (!supabase) return;
-      await checkInAsset(supabase, asset, pieces);
+      const result = await checkInAsset(supabase, asset, pieces);
+      await notify(result.eventId);
       setPanel("damage");
       setMessage("Checked in.");
     });
@@ -116,6 +134,10 @@ export function AssetScreen({
 
   return (
     <div className="mx-auto grid max-w-3xl gap-6 px-4 py-6">
+      {photos[0]?.url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photos[0].url} alt="" className="max-h-72 w-full rounded-3xl object-cover" />
+      ) : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-mono text-sm text-muted">{asset.tag_id}</p>
@@ -217,7 +239,7 @@ export function AssetScreen({
             </div>
           ) : (
             <div className="grid gap-2">
-              {locations.map((location) => (
+              {openLocations.map((location) => (
                 <button
                   key={location.id}
                   type="button"
@@ -249,7 +271,8 @@ export function AssetScreen({
                 void run(async () => {
                   const supabase = getBrowserSupabase();
                   if (!supabase) return;
-                  await setAssetStatus(supabase, asset.id, "broken", "Damaged at check-in");
+                  const result = await setAssetStatus(supabase, asset.id, "broken", "Damaged at check-in");
+                  await notify(result.eventId);
                   setPanel(null);
                   setMessage("Marked broken.");
                 })
@@ -264,7 +287,7 @@ export function AssetScreen({
       {panel === "move" ? (
         <section className="grid gap-3 rounded-3xl border border-line bg-card p-4">
           <h2 className="font-serif text-2xl">Move</h2>
-          {locations.map((location) => (
+          {openLocations.map((location) => (
             <button
               key={location.id}
               type="button"
@@ -295,9 +318,9 @@ export function AssetScreen({
         <section className="grid gap-3 rounded-3xl border border-line bg-card p-4">
           <h2 className="font-serif text-2xl">Report issue</h2>
           <div className="flex flex-wrap gap-2">
-            {(["broken", "in_repair", "missing"] as const).map((status) => (
-              <Button key={status} type="button" variant={issueStatus === status ? "ink" : "ghost"} onClick={() => setIssueStatus(status)}>
-                {status === "in_repair" ? "In repair" : status[0]?.toUpperCase() + status.slice(1)}
+            {issueStatuses.map((status) => (
+              <Button key={status.key} type="button" variant={issueStatus === status.key ? "ink" : "ghost"} onClick={() => setIssueStatus(status.key)}>
+                {status.label}
               </Button>
             ))}
           </div>
@@ -310,7 +333,8 @@ export function AssetScreen({
               void run(async () => {
                 const supabase = getBrowserSupabase();
                 if (!supabase) return;
-                await setAssetStatus(supabase, asset.id, issueStatus, note);
+                const result = await setAssetStatus(supabase, asset.id, issueStatus, note);
+                await notify(result.eventId);
                 setPanel(null);
                 setMessage("Status updated.");
               })
@@ -329,7 +353,7 @@ export function AssetScreen({
         <Detail label="Vendor" value={asset.vendor} />
         <Detail label="Purchased" value={asset.purchase_date ? formatDate(asset.purchase_date, timeZone) : null} />
         <Detail label="Cost" value={formatMoney(asset.cost) || null} />
-        {fieldsFor(asset.type).map((field) => (
+        {(detailFields.length ? detailFields : fieldsFor(asset.type)).map((field) => (
           <Detail
             key={field.key}
             label={field.label}
@@ -420,14 +444,7 @@ export function AssetScreen({
 
       <section className="grid gap-3">
         <h2 className="font-serif text-2xl">History</h2>
-        <ol className="grid gap-3">
-          {events.map((event) => (
-            <li key={event.id} className="rounded-2xl bg-card px-4 py-3">
-              <p className="text-sm">{eventSummary(event)}</p>
-              <p className="mt-1 text-xs text-muted">{formatWhen(event.occurred_at, timeZone)}</p>
-            </li>
-          ))}
-        </ol>
+        <HistoryList events={events} timeZone={timeZone} />
       </section>
 
       <div className="flex flex-wrap gap-2">
@@ -462,13 +479,13 @@ export function AssetScreen({
         </button>
         {canWrite ? (
           <Button variant="ghost" onClick={() => setPanel("delete")}>
-            Delete
+            Archive
           </Button>
         ) : null}
       </div>
       {panel === "delete" ? (
         <section className="grid gap-3 rounded-3xl border border-danger bg-danger-soft p-4">
-          <p>Delete {asset.name}? The history stays. Photos on this item are removed.</p>
+          <p>Archive {asset.name}? It leaves the lists and pickers, and the history stays.</p>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setPanel(null)}>Cancel</Button>
             <Button
@@ -483,7 +500,7 @@ export function AssetScreen({
                 })
               }
             >
-              Delete asset
+              Archive asset
             </Button>
           </div>
         </section>

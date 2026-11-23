@@ -8,7 +8,7 @@ export default async function PeoplePage() {
   const workspace = await loadWorkspace();
   const active = workspace?.active;
   if (!workspace || !active) return null;
-  const allowed = can(active.permissions, PERMISSIONS.assetsView) || can(active.permissions, PERMISSIONS.peopleManage);
+  const allowed = can(active.permissions, PERMISSIONS.assetsView) || can(active.permissions, PERMISSIONS.settingsManage);
   if (!allowed) return <main className="px-4 py-8">You cannot view people.</main>;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
@@ -19,7 +19,7 @@ export default async function PeoplePage() {
       <PeopleManager
         organizationId={active.organization.id}
         people={people}
-        canManage={can(active.permissions, PERMISSIONS.peopleManage)}
+        canManage={can(active.permissions, PERMISSIONS.settingsManage)}
       />
     </main>
   );

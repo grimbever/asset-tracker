@@ -26,6 +26,7 @@ function asset(overrides: Partial<AssetRecord>): AssetRecord {
     parent_asset_id: null,
     checkout_as_unit: false,
     custom_fields: {},
+    archived_at: null,
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
     ...overrides,
