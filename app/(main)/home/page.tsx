@@ -1,12 +1,17 @@
 import Link from "next/link";
 import { DemoButton } from "@/components/home/DemoButton";
-import { eventSummary } from "@/lib/assets/events";
-import { dashboardAttention, listAssets, listRecentEvents, listStatuses } from "@/lib/data";
+import { UpcomingList } from "@/components/home/UpcomingList";
+import {
+  listAssets,
+  listEmployees,
+  listFieldDefinitions,
+  listOpenMaintenance,
+  listStatuses,
+} from "@/lib/data";
 import { statusCards } from "@/lib/lookups";
 import { loadWorkspace } from "@/lib/data/workspace";
-import { formatWhen } from "@/lib/format";
 import { PERMISSIONS, can } from "@/lib/permissions";
-import { assetHref } from "@/lib/scan";
+import { collectUpcoming } from "@/lib/upcoming";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function DashboardPage() {
@@ -16,14 +21,37 @@ export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
   const canView = can(active.permissions, PERMISSIONS.assetsView);
-  const [assets, events, statuses] = canView
+  const [assets, people, fields, maintenance, statuses] = canView
     ? await Promise.all([
         listAssets(supabase, active.organization.id),
-        listRecentEvents(supabase, active.organization.id),
+        listEmployees(supabase, active.organization.id),
+        listFieldDefinitions(supabase, active.organization.id),
+        listOpenMaintenance(supabase, active.organization.id),
         listStatuses(supabase, active.organization.id),
       ])
-    : [[], [], []];
-  const attention = dashboardAttention(assets, active.organization.timezone);
+    : [[], [], [], [], []];
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+  const upcoming = collectUpcoming(
+    {
+      assets,
+      people,
+      fields,
+      maintenance: maintenance.map((job) => {
+        const asset = job.asset_id ? assetById.get(job.asset_id) : undefined;
+        return {
+          id: job.id,
+          title: job.title,
+          due_on: job.due_on,
+          completed_at: job.completed_at,
+          asset_id: job.asset_id,
+          assetName: asset?.name ?? null,
+          assetArchived: Boolean(job.asset_id) && (!asset || Boolean(asset.archived_at)),
+        };
+      }),
+    },
+    active.organization.timezone,
+    new Date(),
+  );
   const cards = statusCards(
     statuses.map((status) => ({
       key: status.key,
@@ -57,31 +85,7 @@ export default async function DashboardPage() {
               </div>
             ))}
           </section>
-          <section className="grid gap-3">
-            <h2 className="font-serif text-2xl">Needs attention</h2>
-            {attention.length === 0 ? <p className="text-sm text-muted">Nothing due right now.</p> : null}
-            <ul className="grid gap-2">
-              {attention.slice(0, 8).map((item) => (
-                <li key={`${item.assetId}-${item.kind}`}>
-                  <Link href={assetHref(item.tagId)} className="block rounded-2xl bg-card px-4 py-3">
-                    <span className="font-medium">{item.name}</span>
-                    <span className="mt-1 block text-sm text-muted">{item.label}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section className="grid gap-3">
-            <h2 className="font-serif text-2xl">Recent activity</h2>
-            <ul className="grid gap-2">
-              {events.map((event) => (
-                <li key={event.id} className="rounded-2xl bg-card px-4 py-3 text-sm">
-                  <p>{eventSummary(event)}</p>
-                  <p className="mt-1 text-xs text-muted">{formatWhen(event.occurred_at, active.organization.timezone)}</p>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <UpcomingList items={upcoming} timeZone={active.organization.timezone} />
           {assets.length === 0 && can(active.permissions, PERMISSIONS.assetsWrite) ? (
             <DemoButton organizationId={active.organization.id} />
           ) : null}

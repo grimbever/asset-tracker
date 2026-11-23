@@ -26,6 +26,7 @@ export {
   listFieldDefinitions,
   listInvites,
   listLocations,
+  listOpenMaintenance,
   listMembers,
   listNotificationEmails,
   listRecentEvents,
