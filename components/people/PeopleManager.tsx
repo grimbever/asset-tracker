@@ -7,9 +7,10 @@ import { Banner, Button, Field, TextInput } from "@/components/ui";
 import { saveEmployeeRecord } from "@/lib/data";
 import type { EmployeeRecord } from "@/lib/data";
 import { messageFrom } from "@/lib/data/errors";
+import { personDraftFrom, updatePersonDraft, type PersonDraft } from "@/lib/people/draft";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
-const empty = { name: "", title: "", email: "", phone: "", hireDate: "", leavingDate: "", notes: "" };
+const empty: PersonDraft = { name: "", title: "", email: "", phone: "", hireDate: "", leavingDate: "", notes: "" };
 
 export function PeopleManager({
   organizationId,
@@ -66,15 +67,7 @@ export function PeopleManager({
           <li key={person.id} className="rounded-2xl bg-card p-4">
             {editing === person.id && canManage ? (
               <PersonForm
-                value={{
-                  name: person.name,
-                  title: person.title ?? "",
-                  email: person.email ?? "",
-                  phone: person.phone ?? "",
-                  hireDate: person.hire_date ?? "",
-                  leavingDate: person.termination_date ?? "",
-                  notes: person.notes ?? "",
-                }}
+                value={draft}
                 onChange={setDraft}
                 onSubmit={(event) => void save(event, person.id)}
                 submitLabel="Save person"
@@ -99,15 +92,7 @@ export function PeopleManager({
                       variant="ghost"
                       onClick={() => {
                         setEditing(person.id);
-                        setDraft({
-                          name: person.name,
-                          title: person.title ?? "",
-                          email: person.email ?? "",
-                          phone: person.phone ?? "",
-                          hireDate: person.hire_date ?? "",
-                          leavingDate: person.termination_date ?? "",
-                          notes: person.notes ?? "",
-                        });
+                        setDraft(personDraftFrom(person));
                       }}
                     >
                       Edit
@@ -147,13 +132,13 @@ function PersonForm({
 }) {
   const fields = (
     <div className="grid gap-3">
-      <Field label="Name"><TextInput required value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} /></Field>
-      <Field label="Title"><TextInput value={value.title} onChange={(event) => onChange({ ...value, title: event.target.value })} /></Field>
-      <Field label="Email"><TextInput type="email" value={value.email} onChange={(event) => onChange({ ...value, email: event.target.value })} /></Field>
-      <Field label="Phone"><TextInput value={value.phone} onChange={(event) => onChange({ ...value, phone: event.target.value })} /></Field>
-      <Field label="Hire date"><TextInput type="date" value={value.hireDate} onChange={(event) => onChange({ ...value, hireDate: event.target.value })} /></Field>
-      <Field label="Leaving date"><TextInput type="date" value={value.leavingDate} onChange={(event) => onChange({ ...value, leavingDate: event.target.value })} /></Field>
-      <Field label="Notes"><TextInput value={value.notes} onChange={(event) => onChange({ ...value, notes: event.target.value })} /></Field>
+      <Field label="Name"><TextInput required value={value.name} onChange={(event) => onChange(updatePersonDraft(value, { name: event.target.value }))} /></Field>
+      <Field label="Title"><TextInput value={value.title} onChange={(event) => onChange(updatePersonDraft(value, { title: event.target.value }))} /></Field>
+      <Field label="Email"><TextInput type="email" value={value.email} onChange={(event) => onChange(updatePersonDraft(value, { email: event.target.value }))} /></Field>
+      <Field label="Phone"><TextInput value={value.phone} onChange={(event) => onChange(updatePersonDraft(value, { phone: event.target.value }))} /></Field>
+      <Field label="Hire date"><TextInput type="date" value={value.hireDate} onChange={(event) => onChange(updatePersonDraft(value, { hireDate: event.target.value }))} /></Field>
+      <Field label="Leaving date"><TextInput type="date" value={value.leavingDate} onChange={(event) => onChange(updatePersonDraft(value, { leavingDate: event.target.value }))} /></Field>
+      <Field label="Notes"><TextInput value={value.notes} onChange={(event) => onChange(updatePersonDraft(value, { notes: event.target.value }))} /></Field>
       <Button type="submit">{submitLabel}</Button>
     </div>
   );
