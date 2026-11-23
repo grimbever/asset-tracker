@@ -575,7 +575,7 @@ begin
       due_on = p_due_on
     where id = p_asset.id
     returning * into v_row;
-    v_payload := jsonb_build_object('assignee_name', v_name, 'due_on', p_due_on);
+    v_payload := jsonb_build_object('assignee_name', v_name, 'due_on', p_due_on, 'employee_id', p_employee_id);
   else
     if p_location_id is null or not exists (
       select 1 from public.locations l
