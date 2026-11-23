@@ -14,8 +14,10 @@ const links = [
   { href: "/assets", label: "Assets", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
   { href: "/scan", label: "Scan", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsScan) },
   { href: "/labels", label: "Labels", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
-  { href: "/people", label: "People", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.peopleManage) },
-  { href: "/locations", label: "Locations", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.locationsManage) },
+  { href: "/people", label: "People", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
+  { href: "/locations", label: "Locations", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
+  { href: "/history", label: "History", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
+  { href: "/lookups", label: "Lookups", show: (permissions: string[]) => can(permissions, PERMISSIONS.settingsManage) },
   { href: "/settings", label: "Settings", show: () => true },
 ];
 

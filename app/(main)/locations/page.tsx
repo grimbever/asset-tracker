@@ -8,7 +8,7 @@ export default async function LocationsPage() {
   const workspace = await loadWorkspace();
   const active = workspace?.active;
   if (!workspace || !active) return null;
-  const allowed = can(active.permissions, PERMISSIONS.assetsView) || can(active.permissions, PERMISSIONS.locationsManage);
+  const allowed = can(active.permissions, PERMISSIONS.assetsView) || can(active.permissions, PERMISSIONS.settingsManage);
   if (!allowed) return <main className="px-4 py-8">You cannot view locations.</main>;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
@@ -19,7 +19,7 @@ export default async function LocationsPage() {
       <LocationManager
         organizationId={active.organization.id}
         locations={locations}
-        canManage={can(active.permissions, PERMISSIONS.locationsManage)}
+        canManage={can(active.permissions, PERMISSIONS.settingsManage)}
       />
     </main>
   );

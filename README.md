@@ -31,6 +31,8 @@ Copy `.env.example` to `.env.local`.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Legacy anon key. Used when the publishable key is empty. |
 | `NEXT_PUBLIC_SITE_URL` | Production site origin for auth emails. Empty in the browser uses the current origin. Leave it empty on Vercel previews. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Not read by this version. Do not expose it to the browser. |
+| `RESEND_API_KEY` | Optional. Sends check-out, check-in, and flagged status email. Empty skips email. |
+| `NOTIFY_FROM` | Optional. Verified Resend sender. Required together with the API key. |
 
 Step-by-step setup for Supabase and Vercel is in [docs/setup.md](docs/setup.md). Paste `supabase/setup.sql` into the Supabase SQL Editor. You do not need the Supabase CLI.
 

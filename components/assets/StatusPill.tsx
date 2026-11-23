@@ -11,10 +11,10 @@ const tones: Record<string, string> = {
   destroyed: "bg-paper-deep text-muted",
 };
 
-export function StatusPill({ status }: { status: string }) {
+export function StatusPill({ status, label }: { status: string; label?: string }) {
   return (
     <span className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${tones[status] ?? "bg-paper-deep"}`}>
-      {assetStatusLabel(status)}
+      {label ?? assetStatusLabel(status)}
     </span>
   );
 }

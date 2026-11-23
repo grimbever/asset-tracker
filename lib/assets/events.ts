@@ -8,6 +8,7 @@ export const EVENT_LABELS: Record<string, string> = {
   photo_added: "Photo added",
   photo_removed: "Photo removed",
   deleted: "Deleted",
+  archived: "Archived",
 };
 
 export type AssetEvent = {

@@ -29,6 +29,7 @@ export const PERMISSIONS = {
   planManage: "plan.manage",
   peopleManage: "people.manage",
   locationsManage: "locations.manage",
+  settingsManage: "settings.manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -69,6 +70,7 @@ const admin: Permission[] = [
   "plan.manage",
   "reports.run",
   "requests.submit",
+  "settings.manage",
   "stock.adjust",
   "stock.take",
   "work_orders.complete",
@@ -90,8 +92,6 @@ export const ROLE_SEEDS: readonly RoleSeed[] = [
       "assets.scan",
       "assets.view",
       "assets.write",
-      "locations.manage",
-      "people.manage",
       "reports.run",
       "requests.submit",
       "stock.adjust",
@@ -112,8 +112,6 @@ export const ROLE_SEEDS: readonly RoleSeed[] = [
       "assets.scan",
       "assets.view",
       "assets.write",
-      "locations.manage",
-      "people.manage",
       "reports.run",
       "requests.submit",
       "stock.adjust",

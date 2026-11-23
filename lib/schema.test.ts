@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync("supabase/migrations/20261123000000_init.sql", "utf8");
+const milestone2 = readFileSync("supabase/migrations/20261124000000_milestone2.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
 const tables = [...migration.matchAll(/create table if not exists public\.(\w+)/g)].map((match) => match[1]);
@@ -11,6 +12,10 @@ describe("schema", () => {
     expect(setup.startsWith("-- Asset Tracker setup")).toBe(true);
     expect(setup).toContain("Paste this whole file into the Supabase SQL Editor");
     expect(setup).toContain(migration);
+    expect(setup).toContain(milestone2);
+    expect(milestone2).toContain("add column if not exists title");
+    expect(milestone2).toContain("settings.manage");
+    expect(milestone2).toContain("archived_at");
   });
 
   it("scopes tenant tables by organization and enables row level security", () => {

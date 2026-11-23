@@ -1,5 +1,5 @@
 import { AssetList } from "@/components/assets/AssetList";
-import { listAssets, listEmployees, listLocations } from "@/lib/data";
+import { listAssets, listCoverPhotos, listEmployees, listLocations, listStatuses } from "@/lib/data";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -20,11 +20,13 @@ export default async function AssetsPage() {
   }
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
-  const [assets, locations, employees] = await Promise.all([
-    listAssets(supabase, active.organization.id),
+  const [assets, locations, employees, statuses] = await Promise.all([
+    listAssets(supabase, active.organization.id, { includeArchived: true }),
     listLocations(supabase, active.organization.id),
     listEmployees(supabase, active.organization.id),
+    listStatuses(supabase, active.organization.id),
   ]);
+  const photos = await listCoverPhotos(supabase, active.organization.id, assets.map((asset) => asset.id));
   const locationNames = Object.fromEntries(locations.map((location) => [location.id, location.name]));
   const assigneeNames = Object.fromEntries(employees.map((person) => [person.id, person.name]));
   return (
@@ -35,6 +37,8 @@ export default async function AssetsPage() {
         locationNames={locationNames}
         assigneeNames={assigneeNames}
         canWrite={can(active.permissions, PERMISSIONS.assetsWrite)}
+        photos={photos}
+        statusLabels={Object.fromEntries(statuses.map((status) => [status.key, status.label]))}
       />
     </main>
   );

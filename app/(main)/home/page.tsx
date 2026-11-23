@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { DemoButton } from "@/components/home/DemoButton";
 import { eventSummary } from "@/lib/assets/events";
-import { assetStatusLabel } from "@/lib/assets/types";
-import { dashboardAttention, listAssets, listRecentEvents } from "@/lib/data";
+import { dashboardAttention, listAssets, listRecentEvents, listStatuses } from "@/lib/data";
+import { statusCards } from "@/lib/lookups";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { formatWhen } from "@/lib/format";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { assetHref } from "@/lib/scan";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { statusCounts } from "@/lib/assets/attention";
 
 export default async function DashboardPage() {
   const workspace = await loadWorkspace();
@@ -17,14 +16,24 @@ export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
   const canView = can(active.permissions, PERMISSIONS.assetsView);
-  const [assets, events] = canView
+  const [assets, events, statuses] = canView
     ? await Promise.all([
         listAssets(supabase, active.organization.id),
         listRecentEvents(supabase, active.organization.id),
+        listStatuses(supabase, active.organization.id),
       ])
-    : [[], []];
+    : [[], [], []];
   const attention = dashboardAttention(assets, active.organization.timezone);
-  const counts = statusCounts(assets);
+  const cards = statusCards(
+    statuses.map((status) => ({
+      key: status.key,
+      label: status.label,
+      position: status.position,
+      needsAttention: status.needs_attention,
+      archivedAt: status.archived_at,
+    })),
+    assets,
+  );
 
   return (
     <main className="mx-auto grid max-w-5xl gap-6 px-4 py-6">
@@ -41,10 +50,10 @@ export default async function DashboardPage() {
               <p className="text-sm text-muted">Assets</p>
               <p className="font-serif text-3xl">{assets.length}</p>
             </div>
-            {counts.slice(0, 3).map((count) => (
-              <div key={count.status} className="rounded-3xl bg-card p-4">
-                <p className="text-sm text-muted">{assetStatusLabel(count.status)}</p>
-                <p className="font-serif text-3xl">{count.count}</p>
+            {cards.map((card) => (
+              <div key={card.key} className="rounded-3xl bg-card p-4">
+                <p className="text-sm text-muted">{card.label}</p>
+                <p className="font-serif text-3xl">{card.count}</p>
               </div>
             ))}
           </section>

@@ -19,6 +19,7 @@ export type LocationRecord = {
   organization_id: string;
   name: string;
   notes: string | null;
+  archived_at?: string | null;
 };
 
 export type EmployeeRecord = {
@@ -27,9 +28,11 @@ export type EmployeeRecord = {
   name: string;
   email: string | null;
   phone: string | null;
+  title: string | null;
   hire_date: string | null;
   termination_date: string | null;
   active: boolean;
+  archived_at: string | null;
   user_id: string | null;
   notes: string | null;
 };
@@ -120,7 +123,7 @@ export function parseAsset(value: unknown): AssetRecord {
   const type = requiredString(row.type, "type");
   const status = requiredString(row.status, "status");
   if (!isAssetType(type) || !isAssetStatus(status)) {
-    throw new Error("The server returned an unknown asset type or status.");
+    throw new Error("The server returned an asset without a type or status.");
   }
   const custom = asObject(row.custom_fields ?? {});
   const customFields: Record<string, string> = {};
@@ -150,6 +153,7 @@ export function parseAsset(value: unknown): AssetRecord {
     parent_asset_id: str(row.parent_asset_id),
     checkout_as_unit: row.checkout_as_unit === true,
     custom_fields: customFields,
+    archived_at: str(row.archived_at),
     created_at: requiredString(row.created_at, "created_at"),
     updated_at: requiredString(row.updated_at, "updated_at"),
   };
@@ -195,12 +199,14 @@ export function kitCheckInIds(parent: AssetRecord, children: readonly AssetRecor
     .map((child) => ({ asset_id: child.id, event_id: newId() }));
 }
 
-export async function listAssets(supabase: Client, organizationId: string): Promise<AssetRecord[]> {
-  const { data, error } = await supabase
-    .from("assets")
-    .select("*")
-    .eq("organization_id", organizationId)
-    .order("name", { ascending: true });
+export async function listAssets(
+  supabase: Client,
+  organizationId: string,
+  options?: { includeArchived?: boolean },
+): Promise<AssetRecord[]> {
+  let query = supabase.from("assets").select("*").eq("organization_id", organizationId).order("name", { ascending: true });
+  if (!options?.includeArchived) query = query.is("archived_at", null);
+  const { data, error } = await query;
   if (error) fail(error);
   return (data ?? []).map(parseAsset);
 }
@@ -250,9 +256,11 @@ export async function updateAsset(supabase: Client, id: string, input: AssetInpu
   return parseAsset(data);
 }
 
-export async function deleteAsset(supabase: Client, id: string): Promise<void> {
-  const { error } = await supabase.rpc("delete_asset", { p_id: id, p_event_id: newId() });
+export async function deleteAsset(supabase: Client, id: string): Promise<string> {
+  const eventId = newId();
+  const { error } = await supabase.rpc("delete_asset", { p_id: id, p_event_id: eventId });
   if (error) fail(error);
+  return eventId;
 }
 
 export async function checkoutAsset(
@@ -260,32 +268,34 @@ export async function checkoutAsset(
   asset: AssetRecord,
   childIds: readonly string[],
   target: { employeeId: string | null; locationId: string | null; dueOn: string | null },
-): Promise<AssetRecord> {
+): Promise<{ asset: AssetRecord; eventId: string }> {
+  const eventId = newId();
   const { data, error } = await supabase.rpc("checkout_asset", {
     p_asset_id: asset.id,
-    p_event_id: newId(),
+    p_event_id: eventId,
     p_employee_id: target.employeeId,
     p_location_id: target.locationId,
     p_due_on: target.dueOn,
     p_child_events: kitCheckoutIds(asset.checkout_as_unit, childIds),
   });
   if (error) fail(error);
-  return parseAsset(data);
+  return { asset: parseAsset(data), eventId };
 }
 
 export async function checkInAsset(
   supabase: Client,
   asset: AssetRecord,
   children: readonly AssetRecord[],
-): Promise<AssetRecord> {
+): Promise<{ asset: AssetRecord; eventId: string }> {
+  const eventId = newId();
   const { data, error } = await supabase.rpc("checkin_asset", {
     p_asset_id: asset.id,
-    p_event_id: newId(),
+    p_event_id: eventId,
     p_child_events: kitCheckInIds(asset, children),
     p_note: null,
   });
   if (error) fail(error);
-  return parseAsset(data);
+  return { asset: parseAsset(data), eventId };
 }
 
 export async function moveAsset(supabase: Client, assetId: string, locationId: string): Promise<AssetRecord> {
@@ -303,15 +313,16 @@ export async function setAssetStatus(
   assetId: string,
   status: AssetStatus,
   note: string,
-): Promise<AssetRecord> {
+): Promise<{ asset: AssetRecord; eventId: string }> {
+  const eventId = newId();
   const { data, error } = await supabase.rpc("set_asset_status", {
     p_asset_id: assetId,
-    p_event_id: newId(),
+    p_event_id: eventId,
     p_status: status,
     p_note: emptyToNull(note),
   });
   if (error) fail(error);
-  return parseAsset(data);
+  return { asset: parseAsset(data), eventId };
 }
 
 export async function listEvents(supabase: Client, assetId: string): Promise<AssetEvent[]> {
@@ -358,7 +369,7 @@ function parseEvent(value: unknown): AssetEvent {
 export async function listLocations(supabase: Client, organizationId: string): Promise<LocationRecord[]> {
   const { data, error } = await supabase
     .from("locations")
-    .select("id, organization_id, name, notes")
+    .select("id, organization_id, name, notes, archived_at")
     .eq("organization_id", organizationId)
     .order("name");
   if (error) fail(error);
@@ -388,7 +399,7 @@ export async function deleteLocation(supabase: Client, id: string): Promise<void
 export async function listEmployees(supabase: Client, organizationId: string): Promise<EmployeeRecord[]> {
   const { data, error } = await supabase
     .from("employees")
-    .select("id, organization_id, name, email, phone, hire_date, termination_date, active, user_id, notes")
+    .select("id, organization_id, name, email, phone, title, hire_date, termination_date, active, archived_at, user_id, notes")
     .eq("organization_id", organizationId)
     .order("name");
   if (error) fail(error);
@@ -764,6 +775,206 @@ export function blankAssetInput(type: AssetType = "equipment"): AssetInput {
     checkoutAsUnit: false,
     customFields: {},
   };
+}
+
+export type LookupRecord = {
+  id: string;
+  organization_id: string;
+  key: string;
+  label: string;
+  position: number;
+  archived_at: string | null;
+  counts_as_available?: boolean;
+  needs_attention?: boolean;
+  notify?: boolean;
+};
+
+export type FieldDefinition = {
+  id: string;
+  organization_id: string;
+  type_key: string;
+  key: string;
+  label: string;
+  kind: "text" | "date";
+  position: number;
+  archived_at: string | null;
+};
+
+export async function listStatuses(supabase: Client, organizationId: string): Promise<LookupRecord[]> {
+  const { data, error } = await supabase
+    .from("asset_statuses")
+    .select("id, organization_id, key, label, position, archived_at, counts_as_available, needs_attention, notify")
+    .eq("organization_id", organizationId)
+    .order("position");
+  if (error) fail(error);
+  return (data ?? []) as LookupRecord[];
+}
+
+export async function listTypes(supabase: Client, organizationId: string): Promise<LookupRecord[]> {
+  const { data, error } = await supabase
+    .from("asset_types")
+    .select("id, organization_id, key, label, position, archived_at")
+    .eq("organization_id", organizationId)
+    .order("position");
+  if (error) fail(error);
+  return (data ?? []) as LookupRecord[];
+}
+
+export async function listFieldDefinitions(supabase: Client, organizationId: string): Promise<FieldDefinition[]> {
+  const { data, error } = await supabase
+    .from("custom_field_definitions")
+    .select("id, organization_id, type_key, key, label, kind, position, archived_at")
+    .eq("organization_id", organizationId)
+    .order("position");
+  if (error) fail(error);
+  return (data ?? []) as FieldDefinition[];
+}
+
+export async function listNotificationEmails(supabase: Client, organizationId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("notification_recipients")
+    .select("email")
+    .eq("organization_id", organizationId)
+    .order("email");
+  if (error) fail(error);
+  return (data ?? []).map((row) => String((row as { email: string }).email));
+}
+
+export async function saveEmployeeRecord(
+  supabase: Client,
+  organizationId: string,
+  input: {
+    id?: string;
+    name: string;
+    title: string;
+    email: string;
+    phone: string;
+    hireDate: string;
+    leavingDate: string;
+    notes: string;
+    active: boolean;
+    archived: boolean;
+  },
+): Promise<void> {
+  const { error } = await supabase.rpc("save_employee", {
+    p_id: input.id ?? newId(),
+    p_event_id: newId(),
+    p_organization_id: organizationId,
+    p_employee: {
+      name: input.name,
+      title: input.title,
+      email: input.email,
+      phone: input.phone,
+      hire_date: input.hireDate,
+      termination_date: input.leavingDate,
+      notes: input.notes,
+      active: input.active,
+      archived: input.archived,
+    },
+  });
+  if (error) fail(error);
+}
+
+export async function saveLocationRecord(
+  supabase: Client,
+  organizationId: string,
+  input: { id?: string; name: string; notes: string; archived: boolean },
+): Promise<void> {
+  const { error } = await supabase.rpc("save_location", {
+    p_id: input.id ?? newId(),
+    p_event_id: newId(),
+    p_organization_id: organizationId,
+    p_location: input,
+  });
+  if (error) fail(error);
+}
+
+export async function saveStatusRecord(supabase: Client, organizationId: string, input: Record<string, unknown> & { id?: string }): Promise<void> {
+  const { error } = await supabase.rpc("save_asset_status", {
+    p_id: input.id ?? newId(),
+    p_event_id: newId(),
+    p_organization_id: organizationId,
+    p_status: input,
+  });
+  if (error) fail(error);
+}
+
+export async function saveTypeRecord(supabase: Client, organizationId: string, input: Record<string, unknown> & { id?: string }): Promise<void> {
+  const { error } = await supabase.rpc("save_asset_type", {
+    p_id: input.id ?? newId(),
+    p_event_id: newId(),
+    p_organization_id: organizationId,
+    p_type: input,
+  });
+  if (error) fail(error);
+}
+
+export async function saveFieldRecord(supabase: Client, organizationId: string, input: Record<string, unknown> & { id?: string }): Promise<void> {
+  const { error } = await supabase.rpc("save_custom_field", {
+    p_id: input.id ?? newId(),
+    p_event_id: newId(),
+    p_organization_id: organizationId,
+    p_field: input,
+  });
+  if (error) fail(error);
+}
+
+export async function saveNotificationEmails(supabase: Client, organizationId: string, emails: string[]): Promise<void> {
+  const { error } = await supabase.rpc("set_notification_recipients", {
+    p_organization_id: organizationId,
+    p_event_id: newId(),
+    p_emails: emails,
+  });
+  if (error) fail(error);
+}
+
+export async function searchEvents(
+  supabase: Client,
+  organizationId: string,
+  filters: { q?: string; subjectType?: string; subjectId?: string; eventType?: string; from?: string; to?: string },
+): Promise<AssetEvent[]> {
+  let query = supabase.from("events").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(400);
+  if (filters.subjectType) query = query.eq("subject_type", filters.subjectType);
+  if (filters.subjectId) query = query.eq("subject_id", filters.subjectId);
+  if (filters.eventType) query = query.eq("event_type", filters.eventType);
+  if (filters.from) query = query.gte("occurred_at", `${filters.from}T00:00:00Z`);
+  if (filters.to) query = query.lte("occurred_at", `${filters.to}T23:59:59Z`);
+  const { data, error } = await query;
+  if (error) fail(error);
+  const events = (data ?? []).map(parseEvent);
+  const needle = filters.q?.trim().toLowerCase();
+  if (!needle) return events;
+  return events.filter((event) => {
+    const haystack = [event.notes, event.actor_name, event.event_type, event.subject_type, JSON.stringify(event.payload), JSON.stringify(event.to_state)]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(needle);
+  });
+}
+
+export async function listCoverPhotos(supabase: Client, organizationId: string, assetIds: string[]): Promise<Record<string, string>> {
+  if (assetIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from("attachments")
+    .select("asset_id, storage_path, created_at")
+    .eq("organization_id", organizationId)
+    .in("asset_id", assetIds)
+    .order("created_at", { ascending: true });
+  if (error) fail(error);
+  const first = new Map<string, string>();
+  for (const row of data ?? []) {
+    const record = row as { asset_id: string; storage_path: string };
+    if (!first.has(record.asset_id)) first.set(record.asset_id, record.storage_path);
+  }
+  const urls: Record<string, string> = {};
+  await Promise.all(
+    [...first.entries()].map(async ([assetId, path]) => {
+      const { data: signed } = await supabase.storage.from("asset-files").createSignedUrl(path, 60 * 60);
+      if (signed?.signedUrl) urls[assetId] = signed.signedUrl;
+    }),
+  );
+  return urls;
 }
 
 export function inputFromAsset(asset: AssetRecord): AssetInput {

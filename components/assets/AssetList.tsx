@@ -15,20 +15,26 @@ export function AssetList({
   locationNames,
   assigneeNames,
   canWrite,
+  photos = {},
+  statusLabels = {},
 }: {
   assets: AssetRecord[];
   locationNames: Record<string, string>;
   assigneeNames: Record<string, string>;
   canWrite: boolean;
+  photos?: Record<string, string>;
+  statusLabels?: Record<string, string>;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
+  const [showArchived, setShowArchived] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return assets.filter((asset) => {
+      if (!showArchived && asset.archived_at) return false;
       if (status !== "all" && asset.status !== status) return false;
       if (!needle) return true;
       const location = asset.location_id ? locationNames[asset.location_id] : "";
@@ -36,7 +42,7 @@ export function AssetList({
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
-  }, [assets, locationNames, query, status]);
+  }, [assets, locationNames, query, showArchived, status]);
 
   function openExact(raw: string) {
     const parsed = parseScan(raw);
@@ -64,16 +70,20 @@ export function AssetList({
         ) : null}
       </div>
       <div className="flex flex-wrap gap-2">
-        {["all", "available", "checked_out", "in_repair", "broken", "missing"].map((value) => (
+        {["all", ...Object.keys(statusLabels)].map((value) => (
           <button
             key={value}
             type="button"
             className={`rounded-full px-3 py-1 text-sm ${status === value ? "bg-ink text-paper" : "bg-card"}`}
             onClick={() => setStatus(value)}
           >
-            {value === "all" ? "All" : value.replaceAll("_", " ")}
+            {value === "all" ? "All" : statusLabels[value] ?? value}
           </button>
         ))}
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
+          Show archived
+        </label>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -115,7 +125,14 @@ export function AssetList({
               />
             </label>
             <Link href={`/assets/${asset.id}`} className="flex flex-1 items-center justify-between gap-3 rounded-2xl bg-card px-4 py-3">
-              <span>
+              <span className="flex items-center gap-3">
+                {photos[asset.id] ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photos[asset.id]} alt="" className="h-14 w-14 rounded-xl object-cover" />
+                ) : (
+                  <span className="grid h-14 w-14 place-items-center rounded-xl bg-paper-deep text-xs text-muted">No photo</span>
+                )}
+                <span>
                 <span className="font-mono text-xs text-muted">{asset.tag_id}</span>
                 <span className="mt-1 block font-medium">{asset.name}</span>
                 <span className="mt-1 block text-sm text-muted">
@@ -126,7 +143,8 @@ export function AssetList({
                     : ""}
                 </span>
               </span>
-              <StatusPill status={asset.status} />
+              </span>
+              <StatusPill status={asset.status} label={statusLabels[asset.status]} />
             </Link>
           </li>
         ))}
