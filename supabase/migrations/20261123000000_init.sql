@@ -1,0 +1,2045 @@
+-- Asset Tracker schema.
+-- Multi-tenant from the first row: every tenant table has organization_id and row level security.
+-- Asset and event ids are supplied by the app (client-generated UUIDs) so a later sync engine can slot in.
+-- The event log is append-only. Asset changes go through the functions below, which write the event in the same transaction.
+--
+-- This file is safe to run more than once. It does not delete equipment.
+--
+-- Built in this milestone: organizations, roles, invites, people, locations, assets, photos, events.
+-- Designed now, not wired in the app yet: consumables, kiosk devices, approval policies,
+-- supply requests, work requests, work orders, maintenance, disposal records, procedures,
+-- onboarding kits, and offboarding checklists.
+
+create extension if not exists pgcrypto;
+
+-- ---------------------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------------------
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create or replace function public.reject_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- A normal edit or delete is rejected. Deleting the whole organization is allowed,
+  -- because that cascade runs after the organization row is already gone.
+  if tg_op = 'DELETE' and not exists (
+    select 1 from public.organizations o where o.id = old.organization_id
+  ) then
+    return old;
+  end if;
+  raise exception 'This record is append-only and cannot be changed.';
+end;
+$$;
+
+create or replace function public.is_org_member(p_org uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.memberships m
+    where m.organization_id = p_org
+      and m.user_id = auth.uid()
+  );
+$$;
+
+create or replace function public.has_org_permission(p_org uuid, p_permission text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.memberships m
+    join public.role_permissions rp on rp.role_id = m.role_id
+    where m.organization_id = p_org
+      and m.user_id = auth.uid()
+      and rp.permission = p_permission
+  );
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Plans. Numbers are placeholders and are not enforced.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.plan_templates (
+  id text primary key,
+  name text not null,
+  max_items integer not null check (max_items > 0),
+  max_users integer not null check (max_users > 0),
+  feature_flags jsonb not null default '{}'::jsonb,
+  unlisted boolean not null default false,
+  note text not null default '',
+  created_at timestamptz not null default now()
+);
+
+comment on table public.plan_templates is
+  'Placeholder plan records. Not prices, and not enforced. Stripe is a later phase.';
+
+insert into public.plan_templates (id, name, max_items, max_users, feature_flags, unlisted, note)
+values
+  (
+    'starter',
+    'Starter',
+    100,
+    5,
+    '{"kiosk":false,"consumables":false,"approvals":false,"work_orders":false,"sop_library":false,"disposal_compliance":false,"offboarding":false,"offline_sync":false}'::jsonb,
+    false,
+    'Example only. Not a price and not enforced.'
+  ),
+  (
+    'team',
+    'Team',
+    500,
+    15,
+    '{"kiosk":true,"consumables":true,"approvals":true,"work_orders":true,"sop_library":false,"disposal_compliance":false,"offboarding":false,"offline_sync":false}'::jsonb,
+    false,
+    'Example only. Not a price and not enforced.'
+  ),
+  (
+    'business',
+    'Business',
+    2500,
+    40,
+    '{"kiosk":true,"consumables":true,"approvals":true,"work_orders":true,"sop_library":true,"disposal_compliance":true,"offboarding":true,"offline_sync":true}'::jsonb,
+    false,
+    'Example only. Not a price and not enforced.'
+  ),
+  (
+    'internal',
+    'Internal',
+    1000000,
+    1000000,
+    '{"kiosk":true,"consumables":true,"approvals":true,"work_orders":true,"sop_library":true,"disposal_compliance":true,"offboarding":true,"offline_sync":true}'::jsonb,
+    true,
+    'Generous defaults so the owner organization is never blocked. Limits are stored and not enforced.'
+  )
+on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Identity and tenancy
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  display_name text not null default '',
+  email text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.organizations (
+  id uuid primary key,
+  name text not null check (char_length(btrim(name)) between 1 and 120),
+  timezone text not null default 'America/Chicago',
+  plan_id text not null default 'internal' references public.plan_templates (id),
+  max_items integer not null default 1000000 check (max_items > 0),
+  max_users integer not null default 1000000 check (max_users > 0),
+  feature_flags jsonb not null default '{}'::jsonb,
+  next_tag_number integer not null default 1001 check (next_tag_number > 0),
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+comment on column public.organizations.max_items is 'Stored for a later plan check. Not enforced.';
+comment on column public.organizations.feature_flags is 'Stored for a later plan check. Not enforced.';
+comment on column public.organizations.next_tag_number is 'Next auto tag, formatted AT-1001, AT-1002, and so on.';
+
+create table if not exists public.roles (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  key text not null,
+  name text not null,
+  description text not null default '',
+  active boolean not null default true,
+  assignable boolean not null default true,
+  built_in boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (organization_id, key),
+  check (
+    built_in = false
+    or key in ('admin', 'manager', 'editor', 'requester', 'viewer', 'kiosk', 'field_tech', 'auditor')
+  )
+);
+
+comment on table public.roles is
+  'Per-organization roles. Field Tech and Auditor are seeded with active = false.';
+
+create table if not exists public.role_permissions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  role_id uuid not null references public.roles (id) on delete cascade,
+  permission text not null,
+  unique (role_id, permission)
+);
+
+create table if not exists public.memberships (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  role_id uuid not null references public.roles (id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+create table if not exists public.invites (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  email text not null check (position('@' in email) > 1),
+  role_id uuid not null references public.roles (id),
+  token text not null unique check (char_length(token) >= 16),
+  invited_by uuid references auth.users (id) on delete set null,
+  expires_at timestamptz not null default (now() + interval '14 days'),
+  accepted_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.normalize_invite_email()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.email := lower(btrim(new.email));
+  return new;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- People and places. Employees are not logins.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.employees (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null check (char_length(btrim(name)) between 1 and 160),
+  email text,
+  phone text,
+  hire_date date,
+  termination_date date,
+  active boolean not null default true,
+  user_id uuid references auth.users (id) on delete set null,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.locations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null check (char_length(btrim(name)) between 1 and 120),
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+comment on table public.locations is 'Flat list. No aisle, shelf, or bin tree, and no default named 1.';
+
+-- ---------------------------------------------------------------------------
+-- Assets
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.assets (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null check (char_length(btrim(name)) between 1 and 200),
+  tag_id text not null check (char_length(btrim(tag_id)) between 1 and 64),
+  type text not null check (type in ('equipment', 'tool', 'trailer', 'dosing_gear', 'it')),
+  status text not null default 'available' check (
+    status in ('available', 'checked_out', 'in_repair', 'broken', 'missing', 'retired', 'disposed', 'destroyed')
+  ),
+  location_id uuid references public.locations (id) on delete restrict,
+  assigned_employee_id uuid references public.employees (id) on delete set null,
+  due_on date,
+  group_label text,
+  brand text,
+  model text,
+  serial text,
+  vendor text,
+  purchase_date date,
+  cost numeric(12, 2) check (cost is null or cost >= 0),
+  notes text,
+  parent_asset_id uuid references public.assets (id) on delete set null,
+  checkout_as_unit boolean not null default false,
+  custom_fields jsonb not null default '{}'::jsonb,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (parent_asset_id is null or parent_asset_id <> id)
+);
+
+comment on table public.assets is
+  'Physical items. id is client-generated. Tag IDs are unique per organization, not globally.';
+
+create unique index if not exists assets_org_tag_lower_idx
+  on public.assets (organization_id, lower(tag_id));
+
+create index if not exists assets_org_idx on public.assets (organization_id);
+create index if not exists assets_parent_idx on public.assets (parent_asset_id);
+create index if not exists assets_location_idx on public.assets (location_id);
+create index if not exists assets_assignee_idx on public.assets (assigned_employee_id);
+
+create table if not exists public.attachments (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  asset_id uuid references public.assets (id) on delete cascade,
+  kind text not null default 'photo' check (kind in ('photo', 'document')),
+  storage_path text not null,
+  file_name text not null,
+  content_type text,
+  byte_size integer check (byte_size is null or byte_size >= 0),
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+comment on table public.attachments is
+  'Photos now. Documents (manuals, certificates) use the same table later. Files live in the asset-files bucket.';
+
+-- ---------------------------------------------------------------------------
+-- Append-only event log
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.events (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  subject_type text not null,
+  subject_id uuid not null,
+  event_type text not null,
+  occurred_at timestamptz not null default now(),
+  actor_user_id uuid references auth.users (id) on delete set null,
+  actor_kiosk_id uuid,
+  actor_name text,
+  from_state jsonb,
+  to_state jsonb,
+  notes text,
+  payload jsonb not null default '{}'::jsonb
+);
+
+comment on table public.events is
+  'Append-only. Corrections are new events. Client supplies the id. Offline sync is not built.';
+
+create index if not exists events_subject_idx
+  on public.events (organization_id, subject_type, subject_id, occurred_at desc);
+
+-- ---------------------------------------------------------------------------
+-- Later features. Tables exist so the next milestones do not reshape tenancy.
+-- The app does not write these yet. Select is limited to the member's organization.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.consumables (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null,
+  sku text,
+  unit text not null default 'each',
+  quantity_on_hand numeric not null default 0,
+  minimum_quantity numeric not null default 0,
+  reorder_quantity numeric not null default 0,
+  location_id uuid references public.locations (id) on delete set null,
+  vendor text,
+  group_label text,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.stock_adjustments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  consumable_id uuid not null references public.consumables (id) on delete cascade,
+  kind text not null check (kind in ('add', 'take', 'correction', 'transfer', 'received', 'parts_used')),
+  quantity_delta numeric not null,
+  notes text,
+  created_by uuid,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.kiosk_devices (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null,
+  location_id uuid references public.locations (id) on delete set null,
+  token_hash text,
+  active boolean not null default true,
+  last_seen_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+comment on table public.kiosk_devices is 'Named storeroom device. No personal login. The kiosk screen is a later milestone.';
+
+create table if not exists public.approval_policies (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  workflow_type text not null check (
+    workflow_type in (
+      'supply_request',
+      'purchase_request',
+      'work_order_signoff',
+      'asset_disposal',
+      'asset_issue'
+    )
+  ),
+  enabled boolean not null default false,
+  approver_role_key text,
+  approver_employee_id uuid references public.employees (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, workflow_type)
+);
+
+comment on table public.approval_policies is
+  'Per-organization approval toggles. All start off. Supply requests are the first workflow to honor the toggle, in a later milestone.';
+
+create table if not exists public.supply_requests (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  consumable_id uuid references public.consumables (id) on delete set null,
+  quantity numeric,
+  requester_name text,
+  requester_user_id uuid,
+  kiosk_device_id uuid references public.kiosk_devices (id) on delete set null,
+  status text not null default 'open' check (status in ('open', 'approved', 'ordered', 'fulfilled', 'closed')),
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.work_requests (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  title text not null,
+  details text,
+  asset_id uuid references public.assets (id) on delete set null,
+  location_id uuid references public.locations (id) on delete set null,
+  status text not null default 'open' check (status in ('open', 'converted', 'closed')),
+  requester_user_id uuid,
+  requester_name text,
+  kiosk_device_id uuid references public.kiosk_devices (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.work_orders (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  request_id uuid references public.work_requests (id) on delete set null,
+  asset_id uuid references public.assets (id) on delete set null,
+  title text not null,
+  details text,
+  assignee_employee_id uuid references public.employees (id) on delete set null,
+  status text not null default 'open' check (
+    status in ('open', 'assigned', 'in_progress', 'completed', 'signed_off')
+  ),
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+comment on column public.work_orders.status is 'signed_off is reserved for v1.5.';
+
+create table if not exists public.maintenance_schedules (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  asset_id uuid references public.assets (id) on delete cascade,
+  title text not null,
+  due_on date,
+  repeat text not null default 'off' check (repeat in ('off', 'weekly', 'monthly', 'yearly')),
+  assigned_employee_id uuid references public.employees (id) on delete set null,
+  notes text,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.disposal_records (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  asset_id uuid,
+  method text check (method in ('shred', 'wipe', 'recycle', 'sold', 'donated', 'other')),
+  performed_on date,
+  performed_by text,
+  witness text,
+  sanitization_standard text,
+  vendor text,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+comment on table public.disposal_records is
+  'v1.5 compliance log. Immutable once written. Retained after the asset is gone. Not used by this milestone.';
+
+create table if not exists public.procedures (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  title text not null,
+  workflow_type text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.procedure_versions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  procedure_id uuid not null references public.procedures (id) on delete cascade,
+  version integer not null,
+  body text not null default '',
+  published_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (procedure_id, version)
+);
+
+create table if not exists public.procedure_steps (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  version_id uuid not null references public.procedure_versions (id) on delete cascade,
+  position integer not null,
+  instruction text not null
+);
+
+create table if not exists public.procedure_acknowledgments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  version_id uuid not null references public.procedure_versions (id) on delete cascade,
+  user_id uuid,
+  employee_id uuid,
+  acknowledged_at timestamptz not null default now()
+);
+
+create table if not exists public.onboarding_kit_templates (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null,
+  target_label text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.onboarding_kit_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  template_id uuid not null references public.onboarding_kit_templates (id) on delete cascade,
+  label text not null,
+  asset_type text
+);
+
+create table if not exists public.offboarding_checklists (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  employee_id uuid references public.employees (id) on delete set null,
+  status text not null default 'open',
+  signed_off_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.offboarding_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  checklist_id uuid not null references public.offboarding_checklists (id) on delete cascade,
+  asset_id uuid,
+  state text not null default 'outstanding'
+);
+
+create table if not exists public.issue_acknowledgments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  asset_id uuid,
+  employee_id uuid,
+  event_id uuid,
+  method text,
+  signed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+comment on table public.issue_acknowledgments is 'v1.5 optional signature or received confirmation. Not used yet.';
+
+-- ---------------------------------------------------------------------------
+-- Triggers
+-- ---------------------------------------------------------------------------
+
+drop trigger if exists profiles_updated_at on public.profiles;
+create trigger profiles_updated_at before update on public.profiles
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists organizations_updated_at on public.organizations;
+create trigger organizations_updated_at before update on public.organizations
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists memberships_updated_at on public.memberships;
+create trigger memberships_updated_at before update on public.memberships
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists employees_updated_at on public.employees;
+create trigger employees_updated_at before update on public.employees
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists locations_updated_at on public.locations;
+create trigger locations_updated_at before update on public.locations
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists assets_updated_at on public.assets;
+create trigger assets_updated_at before update on public.assets
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists invites_email on public.invites;
+create trigger invites_email before insert or update on public.invites
+  for each row execute function public.normalize_invite_email();
+
+drop trigger if exists events_no_update on public.events;
+create trigger events_no_update before update on public.events
+  for each row execute function public.reject_mutation();
+
+drop trigger if exists events_no_delete on public.events;
+create trigger events_no_delete before delete on public.events
+  for each row execute function public.reject_mutation();
+
+drop trigger if exists disposal_no_update on public.disposal_records;
+create trigger disposal_no_update before update on public.disposal_records
+  for each row execute function public.reject_mutation();
+
+drop trigger if exists disposal_no_delete on public.disposal_records;
+create trigger disposal_no_delete before delete on public.disposal_records
+  for each row execute function public.reject_mutation();
+
+create or replace function public.keep_an_admin()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_remaining integer;
+begin
+  if tg_op = 'INSERT' then
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    if new.organization_id <> old.organization_id or new.user_id <> old.user_id or new.id <> old.id then
+      raise exception 'Membership organization and user cannot change.';
+    end if;
+    if new.role_id = old.role_id then
+      return new;
+    end if;
+  end if;
+
+  if not exists (select 1 from public.roles r where r.id = old.role_id and r.key = 'admin') then
+    if tg_op = 'DELETE' then return old; end if;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' and exists (
+    select 1 from public.roles r where r.id = new.role_id and r.key = 'admin'
+  ) then
+    return new;
+  end if;
+
+  select count(*) into v_remaining
+  from public.memberships m
+  join public.roles r on r.id = m.role_id
+  where m.organization_id = old.organization_id
+    and r.key = 'admin'
+    and m.id <> old.id;
+
+  if v_remaining < 1 then
+    raise exception 'Keep at least one admin in this organization.';
+  end if;
+
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists memberships_keep_admin on public.memberships;
+create trigger memberships_keep_admin before insert or update or delete on public.memberships
+  for each row execute function public.keep_an_admin();
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, display_name, email)
+  values (
+    new.id,
+    coalesce(nullif(btrim(new.raw_user_meta_data ->> 'display_name'), ''), ''),
+    coalesce(new.email, '')
+  )
+  on conflict (id) do update set email = excluded.email;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- ---------------------------------------------------------------------------
+-- Organization lifecycle and invites
+-- ---------------------------------------------------------------------------
+
+create or replace function public.seed_role(
+  p_org uuid,
+  p_key text,
+  p_name text,
+  p_description text,
+  p_active boolean,
+  p_assignable boolean,
+  p_permissions text[]
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_role uuid := gen_random_uuid();
+  v_perm text;
+begin
+  insert into public.roles (id, organization_id, key, name, description, active, assignable, built_in)
+  values (v_role, p_org, p_key, p_name, p_description, p_active, p_assignable, true);
+  foreach v_perm in array p_permissions loop
+    insert into public.role_permissions (id, organization_id, role_id, permission)
+    values (gen_random_uuid(), p_org, v_role, v_perm);
+  end loop;
+  return v_role;
+end;
+$$;
+
+create or replace function public.create_organization(
+  p_id uuid,
+  p_name text,
+  p_timezone text,
+  p_additional boolean default false
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_existing uuid;
+  v_name text;
+  v_tz text;
+  v_admin uuid;
+  v_max_items integer;
+  v_max_users integer;
+  v_flags jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in required';
+  end if;
+  if p_id is null then
+    raise exception 'Organization id is required';
+  end if;
+
+  if not coalesce(p_additional, false) then
+    select m.organization_id into v_existing
+    from public.memberships m
+    where m.user_id = auth.uid()
+    order by m.created_at
+    limit 1;
+    if v_existing is not null then
+      return v_existing;
+    end if;
+  end if;
+
+  if exists (select 1 from public.organizations o where o.id = p_id) then
+    if exists (
+      select 1 from public.memberships m
+      where m.organization_id = p_id and m.user_id = auth.uid()
+    ) then
+      return p_id;
+    end if;
+    raise exception 'Organization id already used';
+  end if;
+
+  v_name := btrim(coalesce(p_name, ''));
+  if char_length(v_name) < 1 or char_length(v_name) > 120 then
+    raise exception 'Enter an organization name.';
+  end if;
+
+  v_tz := coalesce(nullif(btrim(coalesce(p_timezone, '')), ''), 'America/Chicago');
+  begin
+    perform now() at time zone v_tz;
+  exception when others then
+    raise exception 'Use a timezone like America/Chicago';
+  end;
+
+  select t.max_items, t.max_users, t.feature_flags
+    into v_max_items, v_max_users, v_flags
+  from public.plan_templates t
+  where t.id = 'internal';
+
+  insert into public.organizations (
+    id, name, timezone, plan_id, max_items, max_users, feature_flags, created_by
+  ) values (
+    p_id,
+    v_name,
+    v_tz,
+    'internal',
+    coalesce(v_max_items, 1000000),
+    coalesce(v_max_users, 1000000),
+    coalesce(v_flags, '{}'::jsonb),
+    auth.uid()
+  );
+
+  -- Built-in roles. Field Tech and Auditor stay inactive. Kiosk is not assigned to a person.
+  v_admin := public.seed_role(p_id, 'admin', 'Admin', 'Full access, including users, invites, and organization settings.', true, true, array['approvals.act', 'approvals.configure', 'assets.checkout', 'assets.maintain', 'assets.move', 'assets.scan', 'assets.view', 'assets.write', 'exports.full', 'import.run', 'kiosk.manage', 'locations.manage', 'org.manage', 'people.manage', 'plan.manage', 'reports.run', 'requests.submit', 'stock.adjust', 'stock.take', 'work_orders.complete', 'work_orders.convert']);
+  perform public.seed_role(p_id, 'manager', 'Manager', 'Manage equipment, approve requests, and assign work. Cannot manage users or organization settings.', true, true, array['approvals.act', 'assets.checkout', 'assets.maintain', 'assets.move', 'assets.scan', 'assets.view', 'assets.write', 'locations.manage', 'people.manage', 'reports.run', 'requests.submit', 'stock.adjust', 'stock.take', 'work_orders.complete', 'work_orders.convert']);
+  perform public.seed_role(p_id, 'editor', 'Editor', 'Add and edit equipment, check it out, and update records.', true, true, array['assets.checkout', 'assets.maintain', 'assets.move', 'assets.scan', 'assets.view', 'assets.write', 'locations.manage', 'people.manage', 'reports.run', 'requests.submit', 'stock.adjust', 'stock.take', 'work_orders.complete']);
+  perform public.seed_role(p_id, 'requester', 'Requester', 'Search or scan an item and submit a request.', true, true, array['assets.scan', 'requests.submit']);
+  perform public.seed_role(p_id, 'viewer', 'Viewer', 'Look up equipment and reports. Cannot change anything.', true, true, array['assets.scan', 'assets.view', 'reports.run']);
+  perform public.seed_role(p_id, 'kiosk', 'Kiosk', 'Storeroom device mode. The kiosk screen is not in this version.', true, false, array['assets.scan', 'requests.submit', 'stock.take']);
+  perform public.seed_role(p_id, 'field_tech', 'Field Tech', 'Field checkout of assigned items. Turned off until a later version.', false, false, array['assets.checkout', 'assets.scan', 'assets.view_assigned', 'work_orders.complete']);
+  perform public.seed_role(p_id, 'auditor', 'Auditor', 'Read-only history and exports. Turned off until a later version.', false, false, array['assets.scan', 'assets.view', 'exports.full', 'reports.run']);
+
+  insert into public.memberships (id, organization_id, user_id, role_id)
+  values (gen_random_uuid(), p_id, auth.uid(), v_admin);
+
+  insert into public.approval_policies (id, organization_id, workflow_type, enabled)
+  select gen_random_uuid(), p_id, workflow, false
+  from unnest(array[
+    'supply_request',
+    'purchase_request',
+    'work_order_signoff',
+    'asset_disposal',
+    'asset_issue'
+  ]) as workflow;
+
+  return p_id;
+end;
+$$;
+
+create or replace function public.update_organization(
+  p_id uuid,
+  p_name text,
+  p_timezone text
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_name text;
+  v_tz text;
+begin
+  if not public.has_org_permission(p_id, 'org.manage') then
+    raise exception 'You cannot change organization settings.';
+  end if;
+  v_name := btrim(coalesce(p_name, ''));
+  if char_length(v_name) < 1 or char_length(v_name) > 120 then
+    raise exception 'Enter an organization name.';
+  end if;
+  v_tz := btrim(coalesce(p_timezone, ''));
+  begin
+    perform now() at time zone v_tz;
+  exception when others then
+    raise exception 'Use a timezone like America/Chicago';
+  end;
+  update public.organizations
+    set name = v_name, timezone = v_tz
+    where id = p_id;
+  return p_id;
+end;
+$$;
+
+create or replace function public.preview_invite(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_row record;
+begin
+  select i.email, i.expires_at, i.accepted_at, o.name as org_name, r.name as role_name
+    into v_row
+  from public.invites i
+  join public.organizations o on o.id = i.organization_id
+  join public.roles r on r.id = i.role_id
+  where i.token = p_token;
+
+  if not found then
+    return jsonb_build_object('found', false);
+  end if;
+
+  return jsonb_build_object(
+    'found', true,
+    'email', v_row.email,
+    'org_name', v_row.org_name,
+    'role_name', v_row.role_name,
+    'expired', v_row.expires_at < now(),
+    'accepted', v_row.accepted_at is not null
+  );
+end;
+$$;
+
+create or replace function public.accept_invite(p_token text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_invite public.invites%rowtype;
+  v_email text;
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in required';
+  end if;
+
+  select * into v_invite from public.invites where token = p_token;
+  if not found then
+    raise exception 'This invite link is not valid.';
+  end if;
+  if v_invite.accepted_at is not null then
+    raise exception 'This invite has already been used.';
+  end if;
+  if v_invite.expires_at < now() then
+    raise exception 'This invite has expired. Ask an admin for a new one.';
+  end if;
+
+  v_email := lower(coalesce(auth.jwt() ->> 'email', ''));
+  if v_email = '' or v_email <> v_invite.email then
+    raise exception 'Sign in with the invited email address.';
+  end if;
+
+  insert into public.memberships (id, organization_id, user_id, role_id)
+  values (gen_random_uuid(), v_invite.organization_id, auth.uid(), v_invite.role_id)
+  on conflict (organization_id, user_id) do nothing;
+
+  update public.invites set accepted_at = now() where id = v_invite.id;
+  return v_invite.organization_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Asset functions. Each change writes one event with the id the app supplies.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.write_event(
+  p_id uuid,
+  p_org uuid,
+  p_subject_type text,
+  p_subject_id uuid,
+  p_event_type text,
+  p_from jsonb,
+  p_to jsonb,
+  p_notes text,
+  p_payload jsonb
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_id is null then
+    raise exception 'Event id is required';
+  end if;
+  insert into public.events (
+    id, organization_id, subject_type, subject_id, event_type,
+    actor_user_id, from_state, to_state, notes, payload
+  ) values (
+    p_id, p_org, p_subject_type, p_subject_id, p_event_type,
+    auth.uid(), p_from, p_to, nullif(btrim(coalesce(p_notes, '')), ''),
+    coalesce(p_payload, '{}'::jsonb)
+  );
+end;
+$$;
+
+create or replace function public.allocate_tag(p_org uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n integer;
+  candidate text;
+  i integer;
+begin
+  for i in 1..30 loop
+    update public.organizations
+      set next_tag_number = next_tag_number + 1
+      where id = p_org
+      returning next_tag_number - 1 into n;
+    candidate := 'AT-' || n::text;
+    exit when not exists (
+      select 1 from public.assets a
+      where a.organization_id = p_org and lower(a.tag_id) = lower(candidate)
+    );
+  end loop;
+  if candidate is null then
+    raise exception 'Could not assign a tag.';
+  end if;
+  return candidate;
+end;
+$$;
+
+create or replace function public.asset_state(p_asset public.assets)
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_build_object(
+    'name', p_asset.name,
+    'tag_id', p_asset.tag_id,
+    'type', p_asset.type,
+    'status', p_asset.status,
+    'location_id', p_asset.location_id,
+    'assigned_employee_id', p_asset.assigned_employee_id,
+    'due_on', p_asset.due_on,
+    'parent_asset_id', p_asset.parent_asset_id,
+    'checkout_as_unit', p_asset.checkout_as_unit
+  );
+$$;
+
+create or replace function public.create_asset(
+  p_id uuid,
+  p_organization_id uuid,
+  p_event_id uuid,
+  p_asset jsonb
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_name text;
+  v_type text;
+  v_tag text;
+  v_location uuid;
+  v_parent uuid;
+  v_cost numeric;
+  v_custom jsonb;
+  v_row public.assets%rowtype;
+begin
+  if not public.has_org_permission(p_organization_id, 'assets.write') then
+    raise exception 'You cannot add equipment.';
+  end if;
+  if p_id is null or p_event_id is null then
+    raise exception 'Asset id and event id are required';
+  end if;
+
+  v_name := btrim(coalesce(p_asset ->> 'name', ''));
+  v_type := btrim(coalesce(p_asset ->> 'type', ''));
+  if char_length(v_name) < 1 then
+    raise exception 'Name is required.';
+  end if;
+  if v_type not in ('equipment', 'tool', 'trailer', 'dosing_gear', 'it') then
+    raise exception 'Choose a type.';
+  end if;
+
+  v_tag := btrim(coalesce(p_asset ->> 'tag_id', ''));
+  if v_tag = '' then
+    v_tag := public.allocate_tag(p_organization_id);
+  end if;
+
+  v_location := nullif(p_asset ->> 'location_id', '')::uuid;
+  v_parent := nullif(p_asset ->> 'parent_asset_id', '')::uuid;
+  if v_location is not null and not exists (
+    select 1 from public.locations l
+    where l.id = v_location and l.organization_id = p_organization_id
+  ) then
+    raise exception 'That location is not in this organization.';
+  end if;
+  if v_parent is not null then
+    if v_parent = p_id then
+      raise exception 'An item cannot be its own parent.';
+    end if;
+    if not exists (
+      select 1 from public.assets a
+      where a.id = v_parent and a.organization_id = p_organization_id
+    ) then
+      raise exception 'The parent item is not in this organization.';
+    end if;
+  end if;
+
+  v_custom := coalesce(p_asset -> 'custom_fields', '{}'::jsonb);
+  if jsonb_typeof(v_custom) <> 'object' then
+    raise exception 'Custom fields must be an object.';
+  end if;
+
+  if nullif(p_asset ->> 'cost', '') is null then
+    v_cost := null;
+  else
+    v_cost := (p_asset ->> 'cost')::numeric;
+    if v_cost < 0 then
+      raise exception 'Cost must be zero or more.';
+    end if;
+  end if;
+
+  insert into public.assets (
+    id, organization_id, name, tag_id, type, status, location_id, group_label,
+    brand, model, serial, vendor, purchase_date, cost, notes, parent_asset_id,
+    checkout_as_unit, custom_fields, created_by
+  ) values (
+    p_id,
+    p_organization_id,
+    v_name,
+    v_tag,
+    v_type,
+    'available',
+    v_location,
+    nullif(btrim(coalesce(p_asset ->> 'group_label', '')), ''),
+    nullif(btrim(coalesce(p_asset ->> 'brand', '')), ''),
+    nullif(btrim(coalesce(p_asset ->> 'model', '')), ''),
+    nullif(btrim(coalesce(p_asset ->> 'serial', '')), ''),
+    nullif(btrim(coalesce(p_asset ->> 'vendor', '')), ''),
+    nullif(p_asset ->> 'purchase_date', '')::date,
+    v_cost,
+    nullif(btrim(coalesce(p_asset ->> 'notes', '')), ''),
+    v_parent,
+    coalesce((p_asset ->> 'checkout_as_unit')::boolean, false),
+    v_custom,
+    auth.uid()
+  )
+  returning * into v_row;
+
+  perform public.write_event(
+    p_event_id, p_organization_id, 'asset', p_id, 'created',
+    null, public.asset_state(v_row), null,
+    jsonb_build_object('name', v_row.name, 'tag_id', v_row.tag_id)
+  );
+
+  return to_jsonb(v_row);
+end;
+$$;
+
+create or replace function public.update_asset(
+  p_id uuid,
+  p_event_id uuid,
+  p_asset jsonb
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_old public.assets%rowtype;
+  v_row public.assets%rowtype;
+  v_name text;
+  v_type text;
+  v_tag text;
+  v_location uuid;
+  v_parent uuid;
+  v_cost numeric;
+  v_custom jsonb;
+begin
+  select * into v_old from public.assets where id = p_id;
+  if not found then
+    raise exception 'That item was not found.';
+  end if;
+  if not public.has_org_permission(v_old.organization_id, 'assets.write') then
+    raise exception 'You cannot edit equipment.';
+  end if;
+
+  v_name := btrim(coalesce(p_asset ->> 'name', ''));
+  v_type := btrim(coalesce(p_asset ->> 'type', ''));
+  v_tag := btrim(coalesce(p_asset ->> 'tag_id', ''));
+  if char_length(v_name) < 1 then
+    raise exception 'Name is required.';
+  end if;
+  if v_type not in ('equipment', 'tool', 'trailer', 'dosing_gear', 'it') then
+    raise exception 'Choose a type.';
+  end if;
+  if v_tag = '' then
+    v_tag := v_old.tag_id;
+  end if;
+
+  v_location := nullif(p_asset ->> 'location_id', '')::uuid;
+  v_parent := nullif(p_asset ->> 'parent_asset_id', '')::uuid;
+  if v_location is not null and not exists (
+    select 1 from public.locations l
+    where l.id = v_location and l.organization_id = v_old.organization_id
+  ) then
+    raise exception 'That location is not in this organization.';
+  end if;
+  if v_parent is not null then
+    if v_parent = p_id then
+      raise exception 'An item cannot be its own parent.';
+    end if;
+    if not exists (
+      select 1 from public.assets a
+      where a.id = v_parent and a.organization_id = v_old.organization_id
+    ) then
+      raise exception 'The parent item is not in this organization.';
+    end if;
+  end if;
+
+  v_custom := coalesce(p_asset -> 'custom_fields', '{}'::jsonb);
+  if jsonb_typeof(v_custom) <> 'object' then
+    raise exception 'Custom fields must be an object.';
+  end if;
+  if nullif(p_asset ->> 'cost', '') is null then
+    v_cost := null;
+  else
+    v_cost := (p_asset ->> 'cost')::numeric;
+    if v_cost < 0 then
+      raise exception 'Cost must be zero or more.';
+    end if;
+  end if;
+
+  update public.assets set
+    name = v_name,
+    tag_id = v_tag,
+    type = v_type,
+    location_id = v_location,
+    group_label = nullif(btrim(coalesce(p_asset ->> 'group_label', '')), ''),
+    brand = nullif(btrim(coalesce(p_asset ->> 'brand', '')), ''),
+    model = nullif(btrim(coalesce(p_asset ->> 'model', '')), ''),
+    serial = nullif(btrim(coalesce(p_asset ->> 'serial', '')), ''),
+    vendor = nullif(btrim(coalesce(p_asset ->> 'vendor', '')), ''),
+    purchase_date = nullif(p_asset ->> 'purchase_date', '')::date,
+    cost = v_cost,
+    notes = nullif(btrim(coalesce(p_asset ->> 'notes', '')), ''),
+    parent_asset_id = v_parent,
+    checkout_as_unit = coalesce((p_asset ->> 'checkout_as_unit')::boolean, false),
+    custom_fields = v_custom
+  where id = p_id
+  returning * into v_row;
+
+  perform public.write_event(
+    p_event_id, v_row.organization_id, 'asset', p_id, 'updated',
+    public.asset_state(v_old), public.asset_state(v_row), null,
+    jsonb_build_object('name', v_row.name, 'tag_id', v_row.tag_id)
+  );
+  return to_jsonb(v_row);
+end;
+$$;
+
+create or replace function public.delete_asset(p_id uuid, p_event_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_old public.assets%rowtype;
+begin
+  select * into v_old from public.assets where id = p_id;
+  if not found then
+    raise exception 'That item was not found.';
+  end if;
+  if not public.has_org_permission(v_old.organization_id, 'assets.write') then
+    raise exception 'You cannot delete equipment.';
+  end if;
+  if exists (select 1 from public.assets c where c.parent_asset_id = p_id) then
+    raise exception 'Unlink the pieces in this kit before deleting it.';
+  end if;
+
+  perform public.write_event(
+    p_event_id, v_old.organization_id, 'asset', p_id, 'deleted',
+    public.asset_state(v_old), null, null,
+    jsonb_build_object('name', v_old.name, 'tag_id', v_old.tag_id)
+  );
+  delete from public.assets where id = p_id;
+end;
+$$;
+
+create or replace function public.apply_checkout(
+  p_asset public.assets,
+  p_event_id uuid,
+  p_employee_id uuid,
+  p_location_id uuid,
+  p_due_on date,
+  p_note text,
+  p_extra jsonb
+) returns public.assets
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row public.assets%rowtype;
+  v_name text;
+  v_payload jsonb;
+begin
+  if p_asset.status = 'checked_out' then
+    raise exception 'Already checked out.';
+  end if;
+  if p_asset.status in ('retired', 'disposed', 'destroyed') then
+    raise exception 'Retired, disposed, and destroyed items stay on the register and are not checked out.';
+  end if;
+  if p_asset.status <> 'available' then
+    raise exception 'Check this item in, or mark it available, before checking it out.';
+  end if;
+
+  if p_employee_id is not null then
+    select e.name into v_name
+    from public.employees e
+    where e.id = p_employee_id
+      and e.organization_id = p_asset.organization_id
+      and e.active;
+    if v_name is null then
+      raise exception 'Choose an active person.';
+    end if;
+    update public.assets set
+      status = 'checked_out',
+      assigned_employee_id = p_employee_id,
+      due_on = p_due_on
+    where id = p_asset.id
+    returning * into v_row;
+    v_payload := jsonb_build_object('assignee_name', v_name, 'due_on', p_due_on);
+  else
+    if p_location_id is null or not exists (
+      select 1 from public.locations l
+      where l.id = p_location_id and l.organization_id = p_asset.organization_id
+    ) then
+      raise exception 'Choose a location.';
+    end if;
+    select l.name into v_name from public.locations l where l.id = p_location_id;
+    update public.assets set
+      status = 'checked_out',
+      assigned_employee_id = null,
+      location_id = p_location_id,
+      due_on = p_due_on
+    where id = p_asset.id
+    returning * into v_row;
+    v_payload := jsonb_build_object('location_name', v_name, 'due_on', p_due_on);
+  end if;
+
+  perform public.write_event(
+    p_event_id, p_asset.organization_id, 'asset', p_asset.id, 'checked_out',
+    public.asset_state(p_asset), public.asset_state(v_row), p_note,
+    v_payload || coalesce(p_extra, '{}'::jsonb)
+  );
+  return v_row;
+end;
+$$;
+
+create or replace function public.checkout_asset(
+  p_asset_id uuid,
+  p_event_id uuid,
+  p_employee_id uuid,
+  p_location_id uuid,
+  p_due_on date,
+  p_child_events jsonb
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_asset public.assets%rowtype;
+  v_row public.assets%rowtype;
+  v_child public.assets%rowtype;
+  v_child_event uuid;
+begin
+  select * into v_asset from public.assets where id = p_asset_id;
+  if not found then
+    raise exception 'That item was not found.';
+  end if;
+  if not public.has_org_permission(v_asset.organization_id, 'assets.checkout') then
+    raise exception 'You cannot check equipment out.';
+  end if;
+  if p_employee_id is not null and p_location_id is not null then
+    raise exception 'Choose a person or a location, not both.';
+  end if;
+  if p_employee_id is null and p_location_id is null then
+    raise exception 'Choose a person or a location.';
+  end if;
+
+  if v_asset.checkout_as_unit then
+    for v_child in
+      select * from public.assets c where c.parent_asset_id = v_asset.id order by c.name
+    loop
+      select nullif(value ->> 'event_id', '')::uuid into v_child_event
+      from jsonb_array_elements(coalesce(p_child_events, '[]'::jsonb))
+      where lower(value ->> 'asset_id') = v_child.id::text;
+      if v_child_event is null then
+        raise exception 'Missing an event id for %', v_child.name;
+      end if;
+    end loop;
+  end if;
+
+  v_row := public.apply_checkout(v_asset, p_event_id, p_employee_id, p_location_id, p_due_on, null, '{}'::jsonb);
+
+  if v_asset.checkout_as_unit then
+    for v_child in
+      select * from public.assets c where c.parent_asset_id = v_asset.id order by c.name
+    loop
+      select nullif(value ->> 'event_id', '')::uuid into v_child_event
+      from jsonb_array_elements(coalesce(p_child_events, '[]'::jsonb))
+      where lower(value ->> 'asset_id') = v_child.id::text;
+      perform public.apply_checkout(
+        v_child, v_child_event, p_employee_id, p_location_id, p_due_on, null,
+        jsonb_build_object('with_parent', true, 'parent_tag', v_asset.tag_id)
+      );
+    end loop;
+  end if;
+
+  select * into v_row from public.assets where id = p_asset_id;
+  return to_jsonb(v_row);
+end;
+$$;
+
+create or replace function public.checkin_asset(
+  p_asset_id uuid,
+  p_event_id uuid,
+  p_child_events jsonb,
+  p_note text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_asset public.assets%rowtype;
+  v_row public.assets%rowtype;
+  v_child public.assets%rowtype;
+  v_child_event uuid;
+begin
+  select * into v_asset from public.assets where id = p_asset_id;
+  if not found then
+    raise exception 'That item was not found.';
+  end if;
+  if not public.has_org_permission(v_asset.organization_id, 'assets.checkout') then
+    raise exception 'You cannot check equipment in.';
+  end if;
+  if v_asset.status <> 'checked_out' then
+    raise exception 'This item is not checked out.';
+  end if;
+
+  if v_asset.checkout_as_unit then
+    for v_child in
+      select * from public.assets c
+      where c.parent_asset_id = v_asset.id
+        and c.status = 'checked_out'
+        and c.assigned_employee_id is not distinct from v_asset.assigned_employee_id
+        and c.due_on is not distinct from v_asset.due_on
+    loop
+      select nullif(value ->> 'event_id', '')::uuid into v_child_event
+      from jsonb_array_elements(coalesce(p_child_events, '[]'::jsonb))
+      where lower(value ->> 'asset_id') = v_child.id::text;
+      if v_child_event is null then
+        raise exception 'Missing an event id for %', v_child.name;
+      end if;
+    end loop;
+  end if;
+
+  update public.assets set
+    status = 'available',
+    assigned_employee_id = null,
+    due_on = null
+  where id = p_asset_id
+  returning * into v_row;
+
+  perform public.write_event(
+    p_event_id, v_asset.organization_id, 'asset', p_asset_id, 'checked_in',
+    public.asset_state(v_asset), public.asset_state(v_row), p_note, '{}'::jsonb
+  );
+
+  if v_asset.checkout_as_unit then
+    for v_child in
+      select * from public.assets c
+      where c.parent_asset_id = v_asset.id
+        and c.status = 'checked_out'
+        and c.assigned_employee_id is not distinct from v_asset.assigned_employee_id
+        and c.due_on is not distinct from v_asset.due_on
+    loop
+      select nullif(value ->> 'event_id', '')::uuid into v_child_event
+      from jsonb_array_elements(coalesce(p_child_events, '[]'::jsonb))
+      where lower(value ->> 'asset_id') = v_child.id::text;
+      update public.assets set
+        status = 'available',
+        assigned_employee_id = null,
+        due_on = null
+      where id = v_child.id
+      returning * into v_row;
+      perform public.write_event(
+        v_child_event, v_child.organization_id, 'asset', v_child.id, 'checked_in',
+        public.asset_state(v_child), public.asset_state(v_row), null,
+        jsonb_build_object('with_parent', true, 'parent_tag', v_asset.tag_id)
+      );
+    end loop;
+  end if;
+
+  select * into v_row from public.assets where id = p_asset_id;
+  return to_jsonb(v_row);
+end;
+$$;
+
+create or replace function public.move_asset(
+  p_asset_id uuid,
+  p_event_id uuid,
+  p_location_id uuid
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_asset public.assets%rowtype;
+  v_row public.assets%rowtype;
+  v_name text;
+begin
+  select * into v_asset from public.assets where id = p_asset_id;
+  if not found then
+    raise exception 'That item was not found.';
+  end if;
+  if not public.has_org_permission(v_asset.organization_id, 'assets.move') then
+    raise exception 'You cannot move equipment.';
+  end if;
+  select l.name into v_name
+  from public.locations l
+  where l.id = p_location_id and l.organization_id = v_asset.organization_id;
+  if v_name is null then
+    raise exception 'Choose a location.';
+  end if;
+
+  update public.assets set location_id = p_location_id where id = p_asset_id
+  returning * into v_row;
+
+  perform public.write_event(
+    p_event_id, v_asset.organization_id, 'asset', p_asset_id, 'moved',
+    public.asset_state(v_asset), public.asset_state(v_row), null,
+    jsonb_build_object('location_name', v_name)
+  );
+  return to_jsonb(v_row);
+end;
+$$;
+
+create or replace function public.set_asset_status(
+  p_asset_id uuid,
+  p_event_id uuid,
+  p_status text,
+  p_note text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_asset public.assets%rowtype;
+  v_row public.assets%rowtype;
+begin
+  select * into v_asset from public.assets where id = p_asset_id;
+  if not found then
+    raise exception 'That item was not found.';
+  end if;
+  if not (
+    public.has_org_permission(v_asset.organization_id, 'assets.maintain')
+    or public.has_org_permission(v_asset.organization_id, 'assets.write')
+  ) then
+    raise exception 'You cannot change this status.';
+  end if;
+  if p_status = 'checked_out' then
+    raise exception 'Use check out to issue this item.';
+  end if;
+  if p_status not in ('available', 'in_repair', 'broken', 'missing', 'retired', 'disposed') then
+    raise exception 'That status is not available.';
+  end if;
+
+  update public.assets set
+    status = p_status,
+    assigned_employee_id = case when p_status = 'available' then null else assigned_employee_id end,
+    due_on = case when p_status = 'available' then null else due_on end
+  where id = p_asset_id
+  returning * into v_row;
+
+  perform public.write_event(
+    p_event_id, v_asset.organization_id, 'asset', p_asset_id, 'status_changed',
+    public.asset_state(v_asset), public.asset_state(v_row), p_note,
+    jsonb_build_object('status', p_status)
+  );
+  return to_jsonb(v_row);
+end;
+$$;
+
+create or replace function public.attach_file(
+  p_id uuid,
+  p_event_id uuid,
+  p_asset_id uuid,
+  p_path text,
+  p_file_name text,
+  p_content_type text,
+  p_byte_size integer
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_asset public.assets%rowtype;
+  v_row public.attachments%rowtype;
+begin
+  select * into v_asset from public.assets where id = p_asset_id;
+  if not found then
+    raise exception 'That item was not found.';
+  end if;
+  if not public.has_org_permission(v_asset.organization_id, 'assets.write') then
+    raise exception 'You cannot add photos.';
+  end if;
+  if p_path not like v_asset.organization_id::text || '/' || v_asset.id::text || '/' || p_id::text || '/%' then
+    raise exception 'Photo path does not match this item.';
+  end if;
+
+  insert into public.attachments (
+    id, organization_id, asset_id, kind, storage_path, file_name, content_type, byte_size, created_by
+  ) values (
+    p_id, v_asset.organization_id, v_asset.id, 'photo', p_path,
+    coalesce(nullif(btrim(p_file_name), ''), 'photo'),
+    p_content_type, p_byte_size, auth.uid()
+  )
+  returning * into v_row;
+
+  perform public.write_event(
+    p_event_id, v_asset.organization_id, 'asset', v_asset.id, 'photo_added',
+    null, null, null, jsonb_build_object('file_name', v_row.file_name, 'attachment_id', v_row.id)
+  );
+  return to_jsonb(v_row);
+end;
+$$;
+
+create or replace function public.remove_file(p_attachment_id uuid, p_event_id uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row public.attachments%rowtype;
+begin
+  select * into v_row from public.attachments where id = p_attachment_id;
+  if not found then
+    raise exception 'That photo was not found.';
+  end if;
+  if not public.has_org_permission(v_row.organization_id, 'assets.write') then
+    raise exception 'You cannot remove photos.';
+  end if;
+  if v_row.asset_id is not null then
+    perform public.write_event(
+      p_event_id, v_row.organization_id, 'asset', v_row.asset_id, 'photo_removed',
+      null, null, null, jsonb_build_object('file_name', v_row.file_name)
+    );
+  end if;
+  delete from public.attachments where id = p_attachment_id;
+  return v_row.storage_path;
+end;
+$$;
+
+create or replace function public.lookup_asset_by_tag(p_tag text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_rows jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in required';
+  end if;
+  select coalesce(jsonb_agg(to_jsonb(a) order by a.name), '[]'::jsonb) into v_rows
+  from public.assets a
+  where lower(a.tag_id) = lower(btrim(coalesce(p_tag, '')))
+    and (
+      public.has_org_permission(a.organization_id, 'assets.view')
+      or public.has_org_permission(a.organization_id, 'assets.scan')
+      or (
+        public.has_org_permission(a.organization_id, 'assets.view_assigned')
+        and a.assigned_employee_id in (
+          select e.id from public.employees e
+          where e.organization_id = a.organization_id and e.user_id = auth.uid()
+        )
+      )
+    );
+  return v_rows;
+end;
+$$;
+
+create or replace function public.read_asset(p_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_asset public.assets%rowtype;
+  v_allowed boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in required';
+  end if;
+  select * into v_asset from public.assets where id = p_id;
+  if not found then
+    return 'null'::jsonb;
+  end if;
+  v_allowed :=
+    public.has_org_permission(v_asset.organization_id, 'assets.view')
+    or public.has_org_permission(v_asset.organization_id, 'assets.scan')
+    or (
+      public.has_org_permission(v_asset.organization_id, 'assets.view_assigned')
+      and v_asset.assigned_employee_id in (
+        select e.id from public.employees e
+        where e.organization_id = v_asset.organization_id and e.user_id = auth.uid()
+      )
+    );
+  if not v_allowed then
+    return 'null'::jsonb;
+  end if;
+  return to_jsonb(v_asset);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Row level security
+-- ---------------------------------------------------------------------------
+
+alter table public.plan_templates enable row level security;
+alter table public.profiles enable row level security;
+alter table public.organizations enable row level security;
+alter table public.roles enable row level security;
+alter table public.role_permissions enable row level security;
+alter table public.memberships enable row level security;
+alter table public.invites enable row level security;
+alter table public.employees enable row level security;
+alter table public.locations enable row level security;
+alter table public.assets enable row level security;
+alter table public.attachments enable row level security;
+alter table public.events enable row level security;
+alter table public.consumables enable row level security;
+alter table public.stock_adjustments enable row level security;
+alter table public.kiosk_devices enable row level security;
+alter table public.approval_policies enable row level security;
+alter table public.supply_requests enable row level security;
+alter table public.work_requests enable row level security;
+alter table public.work_orders enable row level security;
+alter table public.maintenance_schedules enable row level security;
+alter table public.disposal_records enable row level security;
+alter table public.procedures enable row level security;
+alter table public.procedure_versions enable row level security;
+alter table public.procedure_steps enable row level security;
+alter table public.procedure_acknowledgments enable row level security;
+alter table public.onboarding_kit_templates enable row level security;
+alter table public.onboarding_kit_items enable row level security;
+alter table public.offboarding_checklists enable row level security;
+alter table public.offboarding_items enable row level security;
+alter table public.issue_acknowledgments enable row level security;
+
+drop policy if exists plan_templates_read on public.plan_templates;
+create policy plan_templates_read on public.plan_templates
+  for select to authenticated using (true);
+
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles
+  for select to authenticated using (
+    id = auth.uid()
+    or exists (
+      select 1
+      from public.memberships mine
+      join public.memberships theirs on theirs.organization_id = mine.organization_id
+      where mine.user_id = auth.uid() and theirs.user_id = profiles.id
+    )
+  );
+
+drop policy if exists profiles_update on public.profiles;
+create policy profiles_update on public.profiles
+  for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+
+drop policy if exists organizations_select on public.organizations;
+create policy organizations_select on public.organizations
+  for select to authenticated using (public.is_org_member(id));
+
+drop policy if exists roles_select on public.roles;
+create policy roles_select on public.roles
+  for select to authenticated using (public.is_org_member(organization_id));
+
+drop policy if exists role_permissions_select on public.role_permissions;
+create policy role_permissions_select on public.role_permissions
+  for select to authenticated using (public.is_org_member(organization_id));
+
+drop policy if exists memberships_select on public.memberships;
+create policy memberships_select on public.memberships
+  for select to authenticated using (public.is_org_member(organization_id));
+
+drop policy if exists memberships_update on public.memberships;
+create policy memberships_update on public.memberships
+  for update to authenticated
+  using (public.has_org_permission(organization_id, 'org.manage'))
+  with check (
+    public.has_org_permission(organization_id, 'org.manage')
+    and exists (
+      select 1 from public.roles r
+      where r.id = role_id
+        and r.organization_id = memberships.organization_id
+        and r.assignable
+        and r.active
+    )
+  );
+
+drop policy if exists memberships_delete on public.memberships;
+create policy memberships_delete on public.memberships
+  for delete to authenticated using (public.has_org_permission(organization_id, 'org.manage'));
+
+drop policy if exists invites_select on public.invites;
+create policy invites_select on public.invites
+  for select to authenticated using (
+    public.has_org_permission(organization_id, 'org.manage')
+    or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+
+drop policy if exists invites_insert on public.invites;
+create policy invites_insert on public.invites
+  for insert to authenticated with check (
+    public.has_org_permission(organization_id, 'org.manage')
+    and invited_by = auth.uid()
+    and accepted_at is null
+    and exists (
+      select 1 from public.roles r
+      where r.id = role_id
+        and r.organization_id = invites.organization_id
+        and r.assignable
+        and r.active
+    )
+  );
+
+drop policy if exists invites_delete on public.invites;
+create policy invites_delete on public.invites
+  for delete to authenticated using (public.has_org_permission(organization_id, 'org.manage'));
+
+drop policy if exists employees_select on public.employees;
+create policy employees_select on public.employees
+  for select to authenticated using (public.is_org_member(organization_id));
+
+drop policy if exists employees_insert on public.employees;
+create policy employees_insert on public.employees
+  for insert to authenticated with check (
+    public.has_org_permission(organization_id, 'people.manage')
+    and (user_id is null or user_id = auth.uid())
+  );
+
+drop policy if exists employees_update on public.employees;
+create policy employees_update on public.employees
+  for update to authenticated
+  using (public.has_org_permission(organization_id, 'people.manage'))
+  with check (
+    public.has_org_permission(organization_id, 'people.manage')
+    and (user_id is null or user_id = auth.uid())
+  );
+
+drop policy if exists locations_select on public.locations;
+create policy locations_select on public.locations
+  for select to authenticated using (public.is_org_member(organization_id));
+
+drop policy if exists locations_insert on public.locations;
+create policy locations_insert on public.locations
+  for insert to authenticated with check (public.has_org_permission(organization_id, 'locations.manage'));
+
+drop policy if exists locations_update on public.locations;
+create policy locations_update on public.locations
+  for update to authenticated
+  using (public.has_org_permission(organization_id, 'locations.manage'))
+  with check (public.has_org_permission(organization_id, 'locations.manage'));
+
+drop policy if exists locations_delete on public.locations;
+create policy locations_delete on public.locations
+  for delete to authenticated using (public.has_org_permission(organization_id, 'locations.manage'));
+
+drop policy if exists assets_select on public.assets;
+create policy assets_select on public.assets
+  for select to authenticated using (
+    public.has_org_permission(organization_id, 'assets.view')
+    or (
+      public.has_org_permission(organization_id, 'assets.view_assigned')
+      and assigned_employee_id in (
+        select e.id from public.employees e
+        where e.organization_id = assets.organization_id and e.user_id = auth.uid()
+      )
+    )
+  );
+
+drop policy if exists attachments_select on public.attachments;
+create policy attachments_select on public.attachments
+  for select to authenticated using (
+    public.has_org_permission(organization_id, 'assets.view')
+    or public.has_org_permission(organization_id, 'assets.scan')
+    or public.has_org_permission(organization_id, 'assets.view_assigned')
+  );
+
+drop policy if exists events_select on public.events;
+create policy events_select on public.events
+  for select to authenticated using (
+    public.has_org_permission(organization_id, 'assets.view')
+    or public.has_org_permission(organization_id, 'assets.scan')
+    or public.has_org_permission(organization_id, 'exports.full')
+    or public.has_org_permission(organization_id, 'assets.view_assigned')
+  );
+
+-- Later tables: members can read their own organization. Writes arrive with the feature.
+drop policy if exists consumables_select on public.consumables;
+create policy consumables_select on public.consumables
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists stock_adjustments_select on public.stock_adjustments;
+create policy stock_adjustments_select on public.stock_adjustments
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists kiosk_devices_select on public.kiosk_devices;
+create policy kiosk_devices_select on public.kiosk_devices
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists approval_policies_select on public.approval_policies;
+create policy approval_policies_select on public.approval_policies
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists supply_requests_select on public.supply_requests;
+create policy supply_requests_select on public.supply_requests
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists work_requests_select on public.work_requests;
+create policy work_requests_select on public.work_requests
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists work_orders_select on public.work_orders;
+create policy work_orders_select on public.work_orders
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists maintenance_schedules_select on public.maintenance_schedules;
+create policy maintenance_schedules_select on public.maintenance_schedules
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists disposal_records_select on public.disposal_records;
+create policy disposal_records_select on public.disposal_records
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists procedures_select on public.procedures;
+create policy procedures_select on public.procedures
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists procedure_versions_select on public.procedure_versions;
+create policy procedure_versions_select on public.procedure_versions
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists procedure_steps_select on public.procedure_steps;
+create policy procedure_steps_select on public.procedure_steps
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists procedure_acknowledgments_select on public.procedure_acknowledgments;
+create policy procedure_acknowledgments_select on public.procedure_acknowledgments
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists onboarding_kit_templates_select on public.onboarding_kit_templates;
+create policy onboarding_kit_templates_select on public.onboarding_kit_templates
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists onboarding_kit_items_select on public.onboarding_kit_items;
+create policy onboarding_kit_items_select on public.onboarding_kit_items
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists offboarding_checklists_select on public.offboarding_checklists;
+create policy offboarding_checklists_select on public.offboarding_checklists
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists offboarding_items_select on public.offboarding_items;
+create policy offboarding_items_select on public.offboarding_items
+  for select to authenticated using (public.is_org_member(organization_id));
+drop policy if exists issue_acknowledgments_select on public.issue_acknowledgments;
+create policy issue_acknowledgments_select on public.issue_acknowledgments
+  for select to authenticated using (public.is_org_member(organization_id));
+
+-- ---------------------------------------------------------------------------
+-- Grants. Asset writes go through functions so the event log cannot be skipped.
+-- ---------------------------------------------------------------------------
+
+grant usage on schema public to anon, authenticated;
+
+grant select on public.plan_templates to authenticated;
+grant select, update on public.profiles to authenticated;
+grant select on public.organizations to authenticated;
+grant select on public.roles to authenticated;
+grant select on public.role_permissions to authenticated;
+grant select, update, delete on public.memberships to authenticated;
+grant select, insert, delete on public.invites to authenticated;
+grant select, insert, update on public.employees to authenticated;
+grant select, insert, update, delete on public.locations to authenticated;
+grant select on public.assets to authenticated;
+grant select on public.attachments to authenticated;
+grant select on public.events to authenticated;
+grant select on public.consumables to authenticated;
+grant select on public.stock_adjustments to authenticated;
+grant select on public.kiosk_devices to authenticated;
+grant select on public.approval_policies to authenticated;
+grant select on public.supply_requests to authenticated;
+grant select on public.work_requests to authenticated;
+grant select on public.work_orders to authenticated;
+grant select on public.maintenance_schedules to authenticated;
+grant select on public.disposal_records to authenticated;
+grant select on public.procedures to authenticated;
+grant select on public.procedure_versions to authenticated;
+grant select on public.procedure_steps to authenticated;
+grant select on public.procedure_acknowledgments to authenticated;
+grant select on public.onboarding_kit_templates to authenticated;
+grant select on public.onboarding_kit_items to authenticated;
+grant select on public.offboarding_checklists to authenticated;
+grant select on public.offboarding_items to authenticated;
+grant select on public.issue_acknowledgments to authenticated;
+
+revoke all on function public.seed_role(uuid, text, text, text, boolean, boolean, text[]) from public, anon, authenticated;
+revoke all on function public.write_event(uuid, uuid, text, uuid, text, jsonb, jsonb, text, jsonb) from public, anon, authenticated;
+revoke all on function public.allocate_tag(uuid) from public, anon, authenticated;
+revoke all on function public.apply_checkout(public.assets, uuid, uuid, uuid, date, text, jsonb) from public, anon, authenticated;
+revoke all on function public.asset_state(public.assets) from public, anon, authenticated;
+revoke all on function public.set_updated_at() from public, anon, authenticated;
+revoke all on function public.reject_mutation() from public, anon, authenticated;
+revoke all on function public.keep_an_admin() from public, anon, authenticated;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+revoke all on function public.normalize_invite_email() from public, anon, authenticated;
+
+grant execute on function public.is_org_member(uuid) to authenticated;
+grant execute on function public.has_org_permission(uuid, text) to authenticated;
+grant execute on function public.create_organization(uuid, text, text, boolean) to authenticated;
+grant execute on function public.update_organization(uuid, text, text) to authenticated;
+grant execute on function public.preview_invite(text) to anon, authenticated;
+grant execute on function public.accept_invite(text) to authenticated;
+grant execute on function public.create_asset(uuid, uuid, uuid, jsonb) to authenticated;
+grant execute on function public.update_asset(uuid, uuid, jsonb) to authenticated;
+grant execute on function public.delete_asset(uuid, uuid) to authenticated;
+grant execute on function public.checkout_asset(uuid, uuid, uuid, uuid, date, jsonb) to authenticated;
+grant execute on function public.checkin_asset(uuid, uuid, jsonb, text) to authenticated;
+grant execute on function public.move_asset(uuid, uuid, uuid) to authenticated;
+grant execute on function public.set_asset_status(uuid, uuid, text, text) to authenticated;
+grant execute on function public.attach_file(uuid, uuid, uuid, text, text, text, integer) to authenticated;
+grant execute on function public.remove_file(uuid, uuid) to authenticated;
+grant execute on function public.lookup_asset_by_tag(text) to authenticated;
+grant execute on function public.read_asset(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Storage. Private bucket. The first folder is the organization id.
+-- ---------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public)
+values ('asset-files', 'asset-files', false)
+on conflict (id) do nothing;
+
+drop policy if exists asset_files_read on storage.objects;
+create policy asset_files_read on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'asset-files'
+    and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    and public.is_org_member(((storage.foldername(name))[1])::uuid)
+  );
+
+drop policy if exists asset_files_insert on storage.objects;
+create policy asset_files_insert on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'asset-files'
+    and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    and public.has_org_permission(((storage.foldername(name))[1])::uuid, 'assets.write')
+  );
+
+drop policy if exists asset_files_delete on storage.objects;
+create policy asset_files_delete on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'asset-files'
+    and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    and public.has_org_permission(((storage.foldername(name))[1])::uuid, 'assets.write')
+  );

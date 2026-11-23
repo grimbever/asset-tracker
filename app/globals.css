@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #f3efe4;
+  --paper-deep: #e6dfd0;
+  --card: #fffdf8;
+  --ink: #1c1915;
+  --muted: #5e584e;
+  --line: #ddd4c4;
+  --green: #1d6b4f;
+  --green-soft: #e5f2eb;
+  --ember: #c4511a;
+  --ember-soft: #fde8dc;
+  --gold: #8a5a12;
+  --danger: #8f2d2d;
+  --danger-soft: #f8e6e4;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-ember: var(--ember);
+  --color-ember-soft: var(--ember-soft);
+  --color-gold: var(--gold);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-outfit), "Avenir Next", "Segoe UI", sans-serif;
+  --font-serif: var(--font-fraunces), "Iowan Old Style", Palatino, Georgia, serif;
+  --font-mono: var(--font-plex), "IBM Plex Mono", ui-monospace, monospace;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+::selection {
+  background: #f3c7ae;
+}
+
+:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  z-index: 50;
+  transform: translateY(-150%);
+  border-radius: 999px;
+  background: var(--card);
+  padding: 0.5rem 0.75rem;
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+@media print {
+  .app-chrome {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+}
