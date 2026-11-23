@@ -3,12 +3,12 @@ import { redirect } from "next/navigation";
 import { SetupScreen } from "@/components/setup/SetupScreen";
 import { APP_NAME } from "@/lib/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { isSupabaseConfigured, supabaseEnvProblem } from "@/lib/supabase/env";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  if (!isSupabaseConfigured()) return <SetupScreen />;
+  if (!isSupabaseConfigured()) return <SetupScreen problem={supabaseEnvProblem()} />;
   const supabase = await createSupabaseServerClient();
   const user = supabase ? (await supabase.auth.getUser()).data.user : null;
   if (user) redirect("/home");

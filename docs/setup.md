@@ -47,7 +47,7 @@ Password reset and magic-link emails come from Supabase. Invite links are create
 ## 4. Copy the API keys
 
 1. In Supabase, open **Project Settings** → **API** (sometimes labeled **Data API**).
-2. Copy the **Project URL**. It looks like `https://abcdefgh.supabase.co`. If the page shows a URL ending in `/rest/v1`, copy it anyway. The app strips that ending.
+2. Copy the **Project URL**. It looks like `https://abcdefgh.supabase.co`. A host without `https://`, or a URL ending in `/rest/v1`, is accepted. Do not paste the anon key or the publishable key into this field. If the value is not a web address, the site shows a setup screen that names `NEXT_PUBLIC_SUPABASE_URL` instead of crashing.
 3. Copy the **publishable** key if you see one (`sb_publishable_...`). If the page only shows a **anon** **public** key, copy that instead. You only need one of them.
 
 Do not put the **service_role** key in the public site settings. This version does not need it.

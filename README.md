@@ -26,7 +26,7 @@ Copy `.env.example` to `.env.local`.
 
 | Variable | Purpose |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Project URL. A trailing `/rest/v1` is removed. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Project URL. Whitespace, a missing `https://` on a `*.supabase.co` host, and a trailing `/rest/v1` are cleaned up. An invalid value shows the setup screen. |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Preferred key (`sb_publishable_...`). |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Legacy anon key. Used when the publishable key is empty. |
 | `NEXT_PUBLIC_SITE_URL` | Production site origin for auth emails. Empty in the browser uses the current origin. Leave it empty on Vercel previews. |
