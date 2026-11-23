@@ -337,6 +337,19 @@ export async function listEvents(supabase: Client, assetId: string): Promise<Ass
   return (data ?? []).map(parseEvent);
 }
 
+export async function listOpenMaintenance(
+  supabase: Client,
+  organizationId: string,
+): Promise<{ id: string; title: string; due_on: string | null; completed_at: string | null; asset_id: string | null }[]> {
+  const { data, error } = await supabase
+    .from("maintenance_schedules")
+    .select("id, title, due_on, completed_at, asset_id")
+    .eq("organization_id", organizationId)
+    .is("completed_at", null);
+  if (error) fail(error);
+  return (data ?? []) as { id: string; title: string; due_on: string | null; completed_at: string | null; asset_id: string | null }[];
+}
+
 export async function listRecentEvents(supabase: Client, organizationId: string): Promise<AssetEvent[]> {
   const { data, error } = await supabase
     .from("events")

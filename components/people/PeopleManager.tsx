@@ -64,7 +64,7 @@ export function PeopleManager({
       </label>
       <ul className="grid gap-3">
         {visible.map((person) => (
-          <li key={person.id} className="rounded-2xl bg-card p-4">
+          <li id={`person-${person.id}`} key={person.id} className="rounded-2xl bg-card p-4">
             {editing === person.id && canManage ? (
               <PersonForm
                 value={draft}
