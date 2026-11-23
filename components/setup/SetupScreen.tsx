@@ -1,14 +1,21 @@
 import { APP_NAME } from "@/lib/config";
+import type { SupabaseEnvProblem } from "@/lib/supabase/env";
 
-export function SetupScreen() {
+export function SetupScreen({ problem = null }: { problem?: SupabaseEnvProblem | null }) {
   return (
     <main className="mx-auto max-w-2xl px-4 py-12">
       <p className="text-sm font-medium text-ember">{APP_NAME}</p>
       <h1 className="mt-2 font-serif text-4xl tracking-tight">Connect Supabase to open the register</h1>
-      <p className="mt-4 text-base leading-7 text-muted">
-        This deployment does not have a Supabase URL and key yet, so it is showing this setup screen instead of crashing.
-        The equipment register, sign-in, and photos stay off until those values are set.
-      </p>
+      {problem ? (
+        <p role="alert" className="mt-4 rounded-2xl bg-danger-soft px-4 py-3 text-sm leading-6 text-danger">
+          <strong className="font-mono">{problem.variable}</strong> {problem.message}
+        </p>
+      ) : (
+        <p className="mt-4 text-base leading-7 text-muted">
+          This deployment does not have a Supabase URL and key yet, so it is showing this setup screen instead of crashing.
+          The equipment register, sign-in, and photos stay off until those values are set.
+        </p>
+      )}
       <ol className="mt-8 grid gap-4 text-sm leading-6">
         <li className="rounded-2xl bg-card p-4">
           <strong className="block text-base">1. Create the database</strong>
