@@ -22,6 +22,8 @@ The product name is still a working title. It lives in one file, `lib/config.ts`
 
 The run should finish without errors. It creates the tables, the security rules, the photo bucket, and the plan records.
 
+If an earlier paste stopped with an error, paste this whole file again and run it. That second run finishes the missing pieces and does not erase anything already created.
+
 Running the file again is safe. It fills in anything missing and does not erase equipment you have already added.
 
 You do not need to run anything else. The files in `supabase/migrations` are the same schema, kept for later if a developer uses the Supabase tools.
