@@ -10,6 +10,8 @@ export const EVENT_LABELS: Record<string, string> = {
   deleted: "Deleted",
   archived: "Archived",
   invite_sent: "Invite sent",
+  renewed: "Renewed",
+  cancelled: "Cancelled",
 };
 
 export type AssetEvent = {

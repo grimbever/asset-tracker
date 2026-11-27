@@ -2,6 +2,7 @@ import { HistoryFilterForm } from "@/components/history/HistoryFilters";
 import { HistoryList } from "@/components/history/HistoryList";
 import { Banner } from "@/components/ui";
 import { listAssets, listEmployees, listLocations, listRoles, listStatuses, listTypes, searchEvents } from "@/lib/data";
+import { listSubscriptionCategories, listSubscriptions } from "@/lib/subscriptions/data";
 import type { AssetEvent } from "@/lib/assets/events";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { EMPTY_HISTORY_NAMES, historyNames, type HistoryNames } from "@/lib/history/display";
@@ -43,7 +44,18 @@ export default async function HistoryPage({
     for (const asset of assets) subjects[`asset:${asset.id}`] = asset.name;
     for (const person of people) subjects[`employee:${person.id}`] = person.name;
     for (const location of locations) subjects[`location:${location.id}`] = location.name;
-    names = historyNames({ people, locations, assets, statuses, types, roles });
+    let categories: { id: string; name: string }[] = [];
+    try {
+      const [loadedCategories, subscriptions] = await Promise.all([
+        listSubscriptionCategories(supabase, active.organization.id),
+        listSubscriptions(supabase, active.organization.id, false),
+      ]);
+      categories = loadedCategories;
+      for (const subscription of subscriptions) subjects[`subscription:${subscription.id}`] = subscription.name;
+    } catch (caught) {
+      console.error("Subscription names for history were skipped.", caught);
+    }
+    names = historyNames({ people, locations, assets, categories, statuses, types, roles });
     personLabel =
       filters.subjectType === "employee" && filters.subjectId
         ? (people.find((person) => person.id === filters.subjectId)?.name ?? "This person")

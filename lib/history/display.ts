@@ -1,9 +1,11 @@
 import { isUuid } from "@/lib/ids";
+import { cycleLabel, statusLabel } from "@/lib/subscriptions/plan";
 
 export type HistoryNames = {
   people: Record<string, string>;
   locations: Record<string, string>;
   assets: Record<string, string>;
+  categories: Record<string, string>;
   statuses: Record<string, string>;
   types: Record<string, string>;
   roles: Record<string, string>;
@@ -13,6 +15,7 @@ export const EMPTY_HISTORY_NAMES: HistoryNames = {
   people: {},
   locations: {},
   assets: {},
+  categories: {},
   statuses: {},
   types: {},
   roles: {},
@@ -52,11 +55,24 @@ const FIELD_LABELS: Record<string, string> = {
   vendor: "Vendor",
   cost: "Cost",
   active: "Active",
+  owner_employee_id: "Account owner",
+  category_id: "Category",
+  plan_name: "Plan",
+  billing_cycle: "Billing cycle",
+  started_on: "Start date",
+  renews_on: "Renewal",
+  auto_renew: "Auto-renew",
+  notice_days: "Cancellation notice",
+  payment_note: "Payment method",
+  vendor_url: "Vendor URL",
+  seats: "Seats",
+  currency: "Currency",
 };
 
-const PEOPLE_FIELDS = new Set(["assigned_employee_id", "related_employee_id", "employee_id", "invited_by", "user_id"]);
+const PEOPLE_FIELDS = new Set(["assigned_employee_id", "related_employee_id", "employee_id", "invited_by", "user_id", "owner_employee_id"]);
 const LOCATION_FIELDS = new Set(["location_id"]);
 const ASSET_FIELDS = new Set(["parent_asset_id", "asset_id"]);
+const CATEGORY_FIELDS = new Set(["category_id"]);
 const STATUS_FIELDS = new Set(["status", "status_id"]);
 const TYPE_FIELDS = new Set(["type", "type_id"]);
 const ROLE_FIELDS = new Set(["role_id"]);
@@ -65,6 +81,7 @@ export function historyNames(input: {
   people?: readonly { id: string; name: string }[];
   locations?: readonly { id: string; name: string }[];
   assets?: readonly { id: string; name: string }[];
+  categories?: readonly { id: string; name: string }[];
   statuses?: readonly { id: string; key: string; label: string }[];
   types?: readonly { id: string; key: string; label: string }[];
   roles?: readonly { id: string; name: string }[];
@@ -73,6 +90,7 @@ export function historyNames(input: {
     people: byId(input.people),
     locations: byId(input.locations),
     assets: byId(input.assets),
+    categories: byId(input.categories),
     statuses: byKeyAndId(input.statuses),
     types: byKeyAndId(input.types),
     roles: byId(input.roles),
@@ -100,8 +118,9 @@ export function presentHistoryValue(field: string, value: string | null, names: 
     const found = lookupId(key, value, names);
     return found ?? "Unknown (deleted)";
   }
-  if (STATUS_FIELDS.has(key)) return names.statuses[value] ?? humanize(value);
+  if (STATUS_FIELDS.has(key)) return names.statuses[value] ?? subscriptionStatusLabel(value);
   if (TYPE_FIELDS.has(key)) return names.types[value] ?? humanize(value);
+  if (key === "billing_cycle") return cycleLabel(value);
   return value;
 }
 
@@ -120,10 +139,24 @@ function lookupId(field: string, id: string, names: HistoryNames): string | unde
   if (PEOPLE_FIELDS.has(field)) return names.people[id];
   if (LOCATION_FIELDS.has(field)) return names.locations[id];
   if (ASSET_FIELDS.has(field)) return names.assets[id];
+  if (CATEGORY_FIELDS.has(field)) return names.categories[id];
   if (STATUS_FIELDS.has(field)) return names.statuses[id];
   if (TYPE_FIELDS.has(field)) return names.types[id];
   if (ROLE_FIELDS.has(field)) return names.roles[id];
-  return names.people[id] ?? names.locations[id] ?? names.assets[id] ?? names.statuses[id] ?? names.types[id] ?? names.roles[id];
+  return (
+    names.people[id] ??
+    names.locations[id] ??
+    names.assets[id] ??
+    names.categories[id] ??
+    names.statuses[id] ??
+    names.types[id] ??
+    names.roles[id]
+  );
+}
+
+function subscriptionStatusLabel(value: string): string {
+  const label = statusLabel(value);
+  return label === value ? humanize(value) : label;
 }
 
 function humanize(value: string): string {

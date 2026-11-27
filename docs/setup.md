@@ -73,11 +73,11 @@ Do not put the **service_role** key in the public site settings. This version do
 
 If those variables are missing, the site still opens. It shows a setup screen instead of an error.
 
-`SUPABASE_SERVICE_ROLE_KEY` is listed in `.env.example` and is optional. Do not add it unless a later version tells you to. It must never be a `NEXT_PUBLIC_` variable.
+`SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` are optional. Set both on Vercel if you want the daily subscription reminder. Leave them blank and the reminder job skips without an error. The service role key must never be a `NEXT_PUBLIC_` variable.
 
 ### If the database already exists
 
-Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, the super-user permission, the history search, and the invite-email history entry. It also fills in the person on older check-out and check-in rows, lets a signed-in member run that search, archives the Retired status, marks any Retired item Disposed with a history note, and lets history search match people's names and status labels. It does not erase equipment, people, or invites. Invite emails use the same `RESEND_API_KEY` and `NOTIFY_FROM` settings as status alerts. If those are empty, the invite link is still shown to copy.
+Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, the super-user permission, the history search, the invite-email history entry, history names and status labels, and subscriptions. It also fills in the person on older check-out and check-in rows, lets a signed-in member run that search, archives the Retired status, marks any Retired item Disposed with a history note, and lets history search match people's names, status labels, and subscription fields. It does not erase equipment, people, invites, or subscriptions. Invite emails and subscription reminders use the same `RESEND_API_KEY` and `NOTIFY_FROM` settings as status alerts. If those are empty, the invite link is still shown to copy and reminder email is skipped.
 
 ### Auth email through Resend
 

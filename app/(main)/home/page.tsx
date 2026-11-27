@@ -12,6 +12,7 @@ import { assetsHref } from "@/lib/assets/filter";
 import { statusCards } from "@/lib/lookups";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { PERMISSIONS, can } from "@/lib/permissions";
+import { listSubscriptions } from "@/lib/subscriptions/data";
 import { collectUpcoming } from "@/lib/upcoming";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -22,6 +23,7 @@ export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
   const canView = can(active.permissions, PERMISSIONS.assetsView);
+  const canSeeSubscriptions = can(active.permissions, PERMISSIONS.subscriptionsView) || can(active.permissions, PERMISSIONS.subscriptionsManage);
   const [assets, people, fields, maintenance, statuses] = canView
     ? await Promise.all([
         listAssets(supabase, active.organization.id, { includeArchived: true }),
@@ -31,6 +33,14 @@ export default async function DashboardPage() {
         listStatuses(supabase, active.organization.id),
       ])
     : [[], [], [], [], []];
+  let subscriptions: { id: string; name: string; renews_on: string | null; notice_days: number | null; status: string; archived_at: string | null }[] = [];
+  if (canSeeSubscriptions) {
+    try {
+      subscriptions = await listSubscriptions(supabase, active.organization.id, false);
+    } catch {
+      subscriptions = [];
+    }
+  }
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const upcoming = collectUpcoming(
     {
@@ -49,6 +59,7 @@ export default async function DashboardPage() {
           assetArchived: Boolean(job.asset_id) && (!asset || Boolean(asset.archived_at)),
         };
       }),
+      subscriptions,
     },
     active.organization.timezone,
     new Date(),

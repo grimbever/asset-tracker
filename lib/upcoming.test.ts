@@ -76,6 +76,10 @@ describe("upcoming buckets", () => {
             assetArchived: false,
           },
         ],
+        subscriptions: [
+          { id: "adobe", name: "Adobe", renews_on: "2026-12-07", notice_days: 14, status: "active", archived_at: null },
+          { id: "old-sub", name: "Old domain", renews_on: "2026-11-24", notice_days: 0, status: "cancelled", archived_at: null },
+        ],
       },
       zone,
       now,
@@ -91,6 +95,8 @@ describe("upcoming buckets", () => {
     expect(byId["due-old"]).toBeUndefined();
     expect(byId["leave-gone"]).toBeUndefined();
     expect(byId["maint-m2"]).toBeUndefined();
+    expect(byId["sub-adobe"]).toBe("7");
+    expect(byId["sub-old-sub"]).toBeUndefined();
     expect(items.find((item) => item.id === "leave-pat")?.what).toMatch(/assets to recover/);
     expect(groupUpcoming(items).overdue.map((item) => item.id)).toEqual(["leave-pat"]);
   });

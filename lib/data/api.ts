@@ -7,6 +7,7 @@ import { isAssetStatus, isAssetType } from "@/lib/assets/types";
 import type { AssetEvent } from "@/lib/assets/events";
 import { demoAssets, DEMO_LOCATIONS, DEMO_PEOPLE } from "@/lib/demo/catalog";
 import { historyNames } from "@/lib/history/display";
+import { listSubscriptionCategories } from "@/lib/subscriptions/data";
 import {
   HISTORY_LOAD_ERROR,
   historyHitVisible,
@@ -1010,14 +1011,15 @@ async function searchEventsLocally(
   if (range.end) query = query.lt("occurred_at", range.end);
   const { data, error } = await query;
   if (error) fail(error);
-  const [assets, people] = await Promise.all([
+  const [assets, people, categories] = await Promise.all([
     listAssets(supabase, organizationId, { includeArchived: true }),
     listEmployees(supabase, organizationId),
+    listSubscriptionCategories(supabase, organizationId).catch(() => []),
   ]);
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const personById = new Map(people.map((person) => [person.id, person]));
   const named = people.map((person) => ({ id: person.id, name: person.name }));
-  const names = historyNames({ people, assets });
+  const names = historyNames({ people, assets, categories });
   return (data ?? []).map(parseEvent).filter((event) => {
     const asset = event.subject_type === "asset" ? assetById.get(event.subject_id) : undefined;
     const personId = searchPersonId(event);

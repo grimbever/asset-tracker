@@ -7,6 +7,7 @@ const historyLinks = readFileSync("supabase/migrations/20261125000000_history_li
 const inviteSent = readFileSync("supabase/migrations/20261127000000_invite_sent.sql", "utf8");
 const statusChange = readFileSync("supabase/migrations/20261127000000_status_change.sql", "utf8");
 const historyLabels = readFileSync("supabase/migrations/20261128000000_history_labels.sql", "utf8");
+const subscriptions = readFileSync("supabase/migrations/20261129000000_subscriptions.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
 const tables = [...migration.matchAll(/create table if not exists public\.(\w+)/g)].map((match) => match[1]);
@@ -28,6 +29,13 @@ describe("schema", () => {
     expect(setup).toContain(historyLabels);
     expect(historyLabels).toContain("function public.resolve_history_value");
     expect(historyLabels).toContain("Unknown (deleted)");
+    expect(setup).toContain(subscriptions);
+    expect(subscriptions).toContain("subscriptions.manage");
+    expect(subscriptions).toContain("function public.renew_subscription");
+    expect(subscriptions).toContain("subscription_secrets");
+    expect(subscriptions).toContain("from public.subscription_categories c");
+    expect(subscriptions).toContain("Pending renewal");
+    expect(setup.indexOf(historyLabels)).toBeLessThan(setup.indexOf(subscriptions));
     expect(historyLinks).toContain("related_employee_id");
     expect(historyLinks).toContain("function public.search_events");
     expect(historyLinks).toContain("ilike");
