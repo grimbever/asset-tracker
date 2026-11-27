@@ -77,7 +77,7 @@ If those variables are missing, the site still opens. It shows a setup screen in
 
 ### If the database already exists
 
-Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, the super-user permission, and the history search. It also fills in the person on older check-out and check-in rows, and lets a signed-in member run that search. It does not erase equipment or people.
+Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, the super-user permission, the history search, and the invite-email history entry. It also fills in the person on older check-out and check-in rows, and lets a signed-in member run that search. It does not erase equipment or people. Invite emails use the same `RESEND_API_KEY` and `NOTIFY_FROM` settings as status alerts. If those are empty, the invite link is still shown to copy.
 
 ### Auth email through Resend
 

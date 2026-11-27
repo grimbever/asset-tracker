@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync("supabase/migrations/20261123000000_init.sql", "utf8");
 const milestone2 = readFileSync("supabase/migrations/20261124000000_milestone2.sql", "utf8");
 const historyLinks = readFileSync("supabase/migrations/20261125000000_history_links.sql", "utf8");
+const inviteSent = readFileSync("supabase/migrations/20261127000000_invite_sent.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
 const tables = [...migration.matchAll(/create table if not exists public\.(\w+)/g)].map((match) => match[1]);
@@ -15,6 +16,9 @@ describe("schema", () => {
     expect(setup).toContain(migration);
     expect(setup).toContain(milestone2);
     expect(setup).toContain(historyLinks);
+    expect(setup).toContain(inviteSent);
+    expect(inviteSent).toContain("function public.log_invite_sent");
+    expect(inviteSent).toContain("'invite_sent'");
     expect(historyLinks).toContain("related_employee_id");
     expect(historyLinks).toContain("function public.search_events");
     expect(historyLinks).toContain("ilike");

@@ -13,6 +13,7 @@ const recordOptions = [
   ["asset_status", "Status"],
   ["asset_type", "Type"],
   ["custom_field", "Custom field"],
+  ["invite", "Invite"],
 ] as const;
 
 const eventOptions = [
@@ -24,6 +25,7 @@ const eventOptions = [
   ["status_changed", "Status changed"],
   ["archived", "Archived"],
   ["moved", "Moved"],
+  ["invite_sent", "Invite sent"],
 ] as const;
 
 export function HistoryFilterForm({ filters, personLabel }: { filters: HistoryFilters; personLabel: string | null }) {

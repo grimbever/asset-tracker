@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { sendInviteEmail } from "@/app/invite/actions";
 import { CreateOrgForm } from "@/components/shell/CreateOrgForm";
 import { Banner, Button, Field, TextInput } from "@/components/ui";
 import { APP_NAME, TIMEZONES } from "@/lib/config";
+import { SEND_INVITE_BY_EMAIL_DEFAULT, inviteFeedback } from "@/lib/notify/invite";
 import {
   createInvite,
   deleteInvite,
@@ -39,6 +41,8 @@ export function SettingsScreen({
   const [orgName, setOrgName] = useState(organization.name);
   const [timezone, setTimezone] = useState(organization.timezone);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [sendByEmail, setSendByEmail] = useState(SEND_INVITE_BY_EMAIL_DEFAULT);
+  const [sendingId, setSendingId] = useState<string | null>(null);
   const [roleId, setRoleId] = useState(roles.find((role) => role.assignable)?.id ?? "");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [invitedEmail, setInvitedEmail] = useState("");
@@ -73,20 +77,50 @@ export function SettingsScreen({
     }
   }
 
+  function showInviteFeedback(address: string, wantedEmail: boolean, result: Awaited<ReturnType<typeof sendInviteEmail>> | null, again = false) {
+    const feedback = inviteFeedback({ email: address, wantedEmail, result, again });
+    if (feedback.tone === "ok") {
+      setMessage(feedback.text);
+      setError(null);
+    } else {
+      setMessage(null);
+      setError(feedback.text);
+    }
+  }
+
   async function invite(event: FormEvent) {
     event.preventDefault();
     const supabase = getBrowserSupabase();
     if (!supabase) return;
+    const address = inviteEmail.trim();
     try {
-      const created = await createInvite(supabase, organization.id, inviteEmail, roleId, userId);
+      const created = await createInvite(supabase, organization.id, address, roleId, userId);
       const link = `${window.location.origin}/invite/${created.token}`;
-      setInvitedEmail(inviteEmail.trim());
+      setInvitedEmail(created.email || address);
       setInviteLink(link);
       setInviteEmail("");
-      setMessage("Invite created. Send the link to that email address.");
-      setError(null);
+      if (!sendByEmail) {
+        showInviteFeedback(created.email || address, false, null);
+        return;
+      }
+      const result = await sendInviteEmail(created.id, window.location.origin);
+      showInviteFeedback(created.email || address, true, result);
     } catch (caught) {
       setError(messageFrom(caught));
+    }
+  }
+
+  async function resendInvite(inviteId: string, address: string) {
+    setSendingId(inviteId);
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await sendInviteEmail(inviteId, window.location.origin);
+      showInviteFeedback(address, true, result, true);
+    } catch (caught) {
+      setError(messageFrom(caught));
+    } finally {
+      setSendingId(null);
     }
   }
 
@@ -202,11 +236,15 @@ export function SettingsScreen({
               ))}
             </select>
           </Field>
-          <Button type="submit">Create invite link</Button>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={sendByEmail} onChange={(event) => setSendByEmail(event.target.checked)} />
+            Send invite by email
+          </label>
+          <Button type="submit">Create invite</Button>
           {inviteLink ? (
             <div className="grid gap-2 rounded-2xl bg-paper-deep p-3 text-sm">
-              <p>Send this link to that person. It expires in 14 days and only works for the invited email.</p>
-              <TextInput readOnly value={inviteLink} onFocus={(event) => event.currentTarget.select()} />
+              <p>Copy this link if you want to send it yourself. It expires in 14 days and only works for the invited email.</p>
+              <TextInput readOnly value={inviteLink} onFocus={(event) => event.currentTarget.select()} aria-label="Invite link" />
               <a className="underline" href={`mailto:${invitedEmail}?subject=${encodeURIComponent(`Join ${organization.name} on ${APP_NAME}`)}&body=${encodeURIComponent(`Join ${organization.name}:\n${inviteLink}`)}`}>
                 Open an email with this link
               </a>
@@ -214,19 +252,24 @@ export function SettingsScreen({
           ) : null}
           <ul className="grid gap-2 text-sm">
             {invites.map((invite) => (
-              <li key={invite.id} className="flex items-center justify-between gap-3">
+              <li key={invite.id} className="flex flex-wrap items-center justify-between gap-3">
                 <span>{invite.email} · {invite.role_name}</span>
-                <button
-                  type="button"
-                  className="underline"
-                  onClick={() => {
-                    const supabase = getBrowserSupabase();
-                    if (!supabase) return;
-                    void deleteInvite(supabase, invite.id).then(() => window.location.reload());
-                  }}
-                >
-                  Revoke
-                </button>
+                <span className="flex gap-3">
+                  <button type="button" className="underline" disabled={sendingId === invite.id} onClick={() => void resendInvite(invite.id, invite.email)}>
+                    {sendingId === invite.id ? "Sending…" : "Resend invite"}
+                  </button>
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => {
+                      const supabase = getBrowserSupabase();
+                      if (!supabase) return;
+                      void deleteInvite(supabase, invite.id).then(() => window.location.reload());
+                    }}
+                  >
+                    Revoke
+                  </button>
+                </span>
               </li>
             ))}
           </ul>

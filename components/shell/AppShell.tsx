@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { selectOrganization } from "@/app/actions";
+import { ShellAccount } from "@/components/shell/ShellAccount";
 import { APP_NAME } from "@/lib/config";
 import type { Workspace } from "@/lib/data/workspace";
 import { PERMISSIONS, can } from "@/lib/permissions";
-import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 const links = [
   { href: "/home", label: "Home", show: () => true },
@@ -23,41 +23,31 @@ const links = [
 
 export function AppShell({ workspace, children }: { workspace: Workspace; children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const active = workspace.active;
   const permissions = active?.permissions ?? [];
   const visible = links.filter((link) => link.show(permissions));
 
-  async function signOut() {
-    const supabase = getBrowserSupabase();
-    await supabase?.auth.signOut();
-    router.push("/");
-    router.refresh();
-  }
-
   return (
     <div className="min-h-screen md:grid md:grid-cols-[220px_1fr]">
-      <aside className="app-chrome hidden border-r border-line bg-card md:flex md:flex-col md:justify-between">
-        <div>
-          <div className="px-4 py-5">
-            <p className="font-serif text-2xl tracking-tight">{APP_NAME}</p>
-            <p className="mt-1 text-sm text-muted">{active?.organization.name}</p>
-          </div>
-          <nav className="grid px-2">
-            {visible.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`rounded-xl px-3 py-2 text-sm ${pathname.startsWith(link.href) ? "bg-paper-deep font-medium" : ""}`}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
+      <aside className="app-chrome sticky top-0 hidden h-dvh flex-col border-r border-line bg-card md:flex">
+        <div className="px-4 py-5">
+          <p className="font-serif text-2xl tracking-tight">{APP_NAME}</p>
+          <p className="mt-1 truncate text-sm text-muted">{active?.organization.name}</p>
         </div>
-        <div className="grid gap-2 p-4">
+        <nav className="grid min-h-0 flex-1 content-start overflow-y-auto px-2">
+          {visible.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`rounded-xl px-3 py-2 text-sm ${pathname.startsWith(link.href) ? "bg-paper-deep font-medium" : ""}`}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <div>
           {workspace.organizations.length > 1 && active ? (
-            <form action={selectOrganization} className="grid gap-2">
+            <form action={selectOrganization} className="grid gap-2 px-4 pt-3">
               <label className="text-xs text-muted" htmlFor="org-switch">
                 Organization
               </label>
@@ -76,28 +66,32 @@ export function AppShell({ workspace, children }: { workspace: Workspace; childr
               </select>
             </form>
           ) : null}
-          <button type="button" className="text-left text-sm underline" onClick={() => void signOut()}>
-            Sign out
-          </button>
+          <ShellAccount
+            displayName={workspace.displayName}
+            email={workspace.email}
+            organization={active?.organization.name ?? null}
+          />
         </div>
       </aside>
       <div className="min-w-0">
-        <header className="app-chrome flex items-center justify-between border-b border-line px-4 py-3 md:hidden">
-          <div>
-            <p className="font-serif text-xl">{APP_NAME}</p>
-            <p className="text-xs text-muted">{active?.organization.name}</p>
-          </div>
-          <button type="button" className="text-sm underline" onClick={() => void signOut()}>
-            Sign out
-          </button>
+        <header className="app-chrome border-b border-line px-4 py-3 md:hidden">
+          <p className="font-serif text-xl">{APP_NAME}</p>
+          <p className="truncate text-xs text-muted">{active?.organization.name}</p>
         </header>
-        <div className="pb-24 md:pb-10">{children}</div>
-        <nav className="app-chrome fixed inset-x-0 bottom-0 z-20 flex gap-1 overflow-x-auto border-t border-line bg-card px-2 md:hidden">
-          {visible.map((link) => (
-            <Link key={link.href} href={link.href} className="shrink-0 px-3 py-3 text-sm">
-              {link.label}
-            </Link>
-          ))}
+        <div className="pb-44 md:pb-10">{children}</div>
+        <nav aria-label="Mobile menu" className="app-chrome fixed inset-x-0 bottom-0 z-20 border-t border-line bg-card md:hidden">
+          <div className="flex gap-1 overflow-x-auto px-2">
+            {visible.map((link) => (
+              <Link key={link.href} href={link.href} className="shrink-0 px-3 py-3 text-sm">
+                {link.label}
+              </Link>
+            ))}
+          </div>
+          <ShellAccount
+            displayName={workspace.displayName}
+            email={workspace.email}
+            organization={active?.organization.name ?? null}
+          />
         </nav>
       </div>
     </div>
