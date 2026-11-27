@@ -6,6 +6,7 @@ import type { AssetInput, AssetRecord, AssetStatus, AssetType } from "@/lib/asse
 import { isAssetStatus, isAssetType } from "@/lib/assets/types";
 import type { AssetEvent } from "@/lib/assets/events";
 import { demoAssets, DEMO_LOCATIONS, DEMO_PEOPLE } from "@/lib/demo/catalog";
+import { historyNames } from "@/lib/history/display";
 import {
   HISTORY_LOAD_ERROR,
   historyHitVisible,
@@ -1016,6 +1017,7 @@ async function searchEventsLocally(
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const personById = new Map(people.map((person) => [person.id, person]));
   const named = people.map((person) => ({ id: person.id, name: person.name }));
+  const names = historyNames({ people, assets });
   return (data ?? []).map(parseEvent).filter((event) => {
     const asset = event.subject_type === "asset" ? assetById.get(event.subject_id) : undefined;
     const personId = searchPersonId(event);
@@ -1027,6 +1029,7 @@ async function searchEventsLocally(
         assetName: asset?.name ?? null,
         assetTag: asset?.tag_id ?? null,
         personName: person?.name ?? assignee,
+        names,
       },
       filters,
       timeZone,

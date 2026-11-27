@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AssetScreen } from "@/components/assets/AssetScreen";
-import { getAsset, listAssets, listAttachments, listEmployees, listEvents, listFieldDefinitions, listLocations, listStatuses } from "@/lib/data";
+import { getAsset, listAssets, listAttachments, listEmployees, listEvents, listFieldDefinitions, listLocations, listStatuses, listTypes } from "@/lib/data";
+import { historyNames } from "@/lib/history/display";
 import type { MembershipContext } from "@/lib/data";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -19,13 +20,14 @@ export async function AssetView({
   if (!supabase) notFound();
   const asset = await getAsset(supabase, assetId);
   if (!asset || asset.organization_id !== membership.organization.id) notFound();
-  const [assets, events, photos, locations, employees, statuses, fieldDefinitions] = await Promise.all([
+  const [assets, events, photos, locations, employees, statuses, types, fieldDefinitions] = await Promise.all([
     listAssets(supabase, membership.organization.id, { includeArchived: true }),
     listEvents(supabase, asset.id),
     listAttachments(supabase, asset.id),
     listLocations(supabase, membership.organization.id),
     listEmployees(supabase, membership.organization.id),
     listStatuses(supabase, membership.organization.id),
+    listTypes(supabase, membership.organization.id),
     listFieldDefinitions(supabase, membership.organization.id),
   ]);
   const parent = asset.parent_asset_id ? assets.find((item) => item.id === asset.parent_asset_id) : undefined;
@@ -44,6 +46,7 @@ export async function AssetView({
       userId={userId}
       displayName={displayName}
       timeZone={membership.organization.timezone}
+      names={historyNames({ people: employees, locations, assets, statuses, types })}
       statuses={statuses.map((status) => ({
         key: status.key,
         label: status.label,
