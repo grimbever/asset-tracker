@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
 import { CreateOrgForm } from "@/components/shell/CreateOrgForm";
+import { ShellAccount } from "@/components/shell/ShellAccount";
 import { APP_NAME } from "@/lib/config";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -23,6 +24,7 @@ export default async function MainLayout({ children }: { children: ReactNode }) 
         <div className="mt-6">
           <CreateOrgForm />
         </div>
+        <ShellAccount displayName={workspace.displayName} email={workspace.email} organization={null} />
       </main>
     );
   }

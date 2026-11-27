@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync("supabase/migrations/20261123000000_init.sql", "utf8");
 const milestone2 = readFileSync("supabase/migrations/20261124000000_milestone2.sql", "utf8");
 const historyLinks = readFileSync("supabase/migrations/20261125000000_history_links.sql", "utf8");
+const inviteSent = readFileSync("supabase/migrations/20261127000000_invite_sent.sql", "utf8");
 const statusChange = readFileSync("supabase/migrations/20261127000000_status_change.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
@@ -16,6 +17,9 @@ describe("schema", () => {
     expect(setup).toContain(migration);
     expect(setup).toContain(milestone2);
     expect(setup).toContain(historyLinks);
+    expect(setup).toContain(inviteSent);
+    expect(inviteSent).toContain("function public.log_invite_sent");
+    expect(inviteSent).toContain("'invite_sent'");
     expect(setup).toContain(statusChange);
     expect(statusChange).toContain("key = 'retired'");
     expect(statusChange).toContain("status = 'disposed'");
