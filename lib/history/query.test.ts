@@ -6,8 +6,10 @@ import {
   eventMatchesQuery,
   eventMentionsEmployee,
   historyHitVisible,
+  HISTORY_LOAD_ERROR,
   historyHref,
   historyRange,
+  historyRpcPlan,
   isMissingHistorySearch,
   readHistoryFilters,
   type HistoryHit,
@@ -227,5 +229,14 @@ describe("missing search function", () => {
   it("recognizes the schema-cache miss and ignores other errors", () => {
     expect(isMissingHistorySearch({ code: "PGRST202", message: "Could not find the function public.search_events" })).toBe(true);
     expect(isMissingHistorySearch({ message: "You cannot view history." })).toBe(false);
+  });
+
+  it("falls back when a helper function rejects the signed-in user, and keeps a real denial", () => {
+    expect(historyRpcPlan(null)).toBe("ok");
+    expect(historyRpcPlan({ code: "42501", message: "permission denied for function event_mentions_employee" })).toBe("fallback");
+    expect(historyRpcPlan({ code: "42501", message: "permission denied for function event_search_text" })).toBe("fallback");
+    expect(historyRpcPlan({ code: "PGRST202", message: "Could not find the function public.search_events" })).toBe("fallback");
+    expect(historyRpcPlan({ message: "You cannot view history." })).toBe("denied");
+    expect(HISTORY_LOAD_ERROR).not.toMatch(/permission denied|event_mentions_employee/i);
   });
 });

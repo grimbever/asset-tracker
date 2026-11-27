@@ -77,7 +77,7 @@ If those variables are missing, the site still opens. It shows a setup screen in
 
 ### If the database already exists
 
-Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, the super-user permission, and the history search. It also fills in the person on older check-out and check-in rows. It does not erase equipment or people.
+Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, the super-user permission, and the history search. It also fills in the person on older check-out and check-in rows, and lets a signed-in member run that search. It does not erase equipment or people.
 
 ### Auth email through Resend
 

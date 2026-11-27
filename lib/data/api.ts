@@ -7,9 +7,10 @@ import { isAssetStatus, isAssetType } from "@/lib/assets/types";
 import type { AssetEvent } from "@/lib/assets/events";
 import { demoAssets, DEMO_LOCATIONS, DEMO_PEOPLE } from "@/lib/demo/catalog";
 import {
+  HISTORY_LOAD_ERROR,
   historyHitVisible,
   historyRange,
-  isMissingHistorySearch,
+  historyRpcPlan,
   readHistoryFilters,
   searchPersonId,
   type HistoryFilters,
@@ -950,11 +951,16 @@ export async function saveNotificationEmails(supabase: Client, organizationId: s
   if (error) fail(error);
 }
 
+export type HistorySearchResult = {
+  events: AssetEvent[];
+  error: string | null;
+};
+
 export async function searchEvents(
   supabase: Client,
   organizationId: string,
   filters: { q?: string; subjectType?: string; subjectId?: string; eventType?: string; from?: string; to?: string; timeZone: string },
-): Promise<AssetEvent[]> {
+): Promise<HistorySearchResult> {
   const parsed = readHistoryFilters({
     q: filters.q,
     type: filters.subjectType,
@@ -964,18 +970,25 @@ export async function searchEvents(
     id: filters.subjectId,
   });
   const range = historyRange(parsed.from, parsed.to, filters.timeZone);
-  const { data, error } = await supabase.rpc("search_events", {
-    p_organization_id: organizationId,
-    p_query: emptyToNull(parsed.q),
-    p_subject_type: emptyToNull(parsed.subjectType),
-    p_subject_id: parsed.subjectId || null,
-    p_event_type: emptyToNull(parsed.eventType),
-    p_from: range.start,
-    p_to: range.end,
-  });
-  if (!error) return (data ?? []).map(parseEvent);
-  if (!isMissingHistorySearch(error)) fail(error);
-  return searchEventsLocally(supabase, organizationId, parsed, filters.timeZone);
+  try {
+    const { data, error } = await supabase.rpc("search_events", {
+      p_organization_id: organizationId,
+      p_query: emptyToNull(parsed.q),
+      p_subject_type: emptyToNull(parsed.subjectType),
+      p_subject_id: parsed.subjectId || null,
+      p_event_type: emptyToNull(parsed.eventType),
+      p_from: range.start,
+      p_to: range.end,
+    });
+    const plan = historyRpcPlan(error);
+    if (plan === "ok") return { events: (data ?? []).map(parseEvent), error: null };
+    if (plan === "denied") return { events: [], error: "You cannot view history." };
+    console.error("History search failed. Using the in-app filter.", error);
+    return { events: await searchEventsLocally(supabase, organizationId, parsed, filters.timeZone), error: null };
+  } catch (caught) {
+    console.error("History search failed.", caught);
+    return { events: [], error: HISTORY_LOAD_ERROR };
+  }
 }
 
 async function searchEventsLocally(
