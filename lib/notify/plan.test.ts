@@ -5,11 +5,12 @@ describe("notification plan", () => {
   it("emails check-out, check-in, and statuses flagged to notify", () => {
     expect(shouldEmail({ eventType: "checked_out" })).toBe(true);
     expect(shouldEmail({ eventType: "checked_in" })).toBe(true);
-    expect(shouldEmail({ eventType: "status_changed", statusKey: "broken" })).toBe(true);
-    expect(shouldEmail({ eventType: "status_changed", statusKey: "missing" })).toBe(true);
-    expect(shouldEmail({ eventType: "status_changed", statusKey: "in_repair" })).toBe(true);
+    expect(shouldEmail({ eventType: "status_changed", statusKey: "broken", statusNotify: true })).toBe(true);
+    expect(shouldEmail({ eventType: "status_changed", statusKey: "missing", statusNotify: true })).toBe(true);
+    expect(shouldEmail({ eventType: "status_changed", statusKey: "in_repair", statusNotify: true })).toBe(true);
+    expect(shouldEmail({ eventType: "status_changed", statusKey: "available", statusNotify: false })).toBe(false);
     expect(shouldEmail({ eventType: "status_changed", statusKey: "custom", statusNotify: true })).toBe(true);
-    expect(shouldEmail({ eventType: "status_changed", statusKey: "retired" })).toBe(false);
+    expect(shouldEmail({ eventType: "status_changed", statusKey: "disposed", statusNotify: false })).toBe(false);
     expect(shouldEmail({ eventType: "updated" })).toBe(false);
   });
 

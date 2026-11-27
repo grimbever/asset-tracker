@@ -44,7 +44,15 @@ export async function AssetView({
       userId={userId}
       displayName={displayName}
       timeZone={membership.organization.timezone}
-      statuses={statuses.map((status) => ({ key: status.key, label: status.label, archived_at: status.archived_at }))}
+      statuses={statuses.map((status) => ({
+        key: status.key,
+        label: status.label,
+        archived_at: status.archived_at,
+        position: status.position,
+        counts_as_available: Boolean(status.counts_as_available),
+        needs_attention: Boolean(status.needs_attention),
+        notify: Boolean(status.notify),
+      }))}
       fieldDefinitions={fieldDefinitions}
     />
   );

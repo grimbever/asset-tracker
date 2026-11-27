@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Mono, Outfit } from "next/font/google";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
+import { AppUpdateNotice } from "@/components/shell/AppUpdateNotice";
 import { APP_DESCRIPTION, APP_NAME, APP_SHORT_NAME, BRAND } from "@/lib/config";
 import "./globals.css";
 
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           Skip to content
         </a>
         <div id="content">{children}</div>
+        <AppUpdateNotice />
         <RegisterServiceWorker />
       </body>
     </html>

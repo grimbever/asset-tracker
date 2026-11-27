@@ -5,8 +5,7 @@ export function shouldEmail(input: {
 }): boolean {
   if (input.eventType === "checked_out" || input.eventType === "checked_in") return true;
   if (input.eventType !== "status_changed") return false;
-  if (input.statusNotify) return true;
-  return input.statusKey === "broken" || input.statusKey === "missing" || input.statusKey === "in_repair";
+  return Boolean(input.statusNotify);
 }
 
 export function notificationRecipients(customEmails: readonly string[], adminEmails: readonly string[]): string[] {

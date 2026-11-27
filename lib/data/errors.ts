@@ -1,4 +1,7 @@
+import { APP_UPDATED_MESSAGE, isStaleAppError } from "@/lib/app-update";
+
 export function messageFrom(error: unknown, fallback = "That did not save. Try again."): string {
+  if (isStaleAppError(error)) return APP_UPDATED_MESSAGE;
   if (error instanceof Error && error.message.trim()) return clean(error.message);
   if (typeof error === "object" && error && "message" in error && typeof error.message === "string") {
     return clean(error.message);
