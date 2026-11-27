@@ -6,6 +6,7 @@ const milestone2 = readFileSync("supabase/migrations/20261124000000_milestone2.s
 const historyLinks = readFileSync("supabase/migrations/20261125000000_history_links.sql", "utf8");
 const inviteSent = readFileSync("supabase/migrations/20261127000000_invite_sent.sql", "utf8");
 const statusChange = readFileSync("supabase/migrations/20261127000000_status_change.sql", "utf8");
+const subscriptions = readFileSync("supabase/migrations/20261129000000_subscriptions.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
 const tables = [...migration.matchAll(/create table if not exists public\.(\w+)/g)].map((match) => match[1]);
@@ -24,6 +25,10 @@ describe("schema", () => {
     expect(statusChange).toContain("key = 'retired'");
     expect(statusChange).toContain("status = 'disposed'");
     expect(statusChange).not.toContain("('retired', 'Retired'");
+    expect(setup).toContain(subscriptions);
+    expect(subscriptions).toContain("subscriptions.manage");
+    expect(subscriptions).toContain("function public.renew_subscription");
+    expect(subscriptions).toContain("subscription_secrets");
     expect(historyLinks).toContain("related_employee_id");
     expect(historyLinks).toContain("function public.search_events");
     expect(historyLinks).toContain("ilike");

@@ -1,4 +1,5 @@
 import { daysUntil } from "@/lib/assets/attention";
+import { renewalAttentionDate } from "@/lib/subscriptions/plan";
 
 export type UpcomingBucket = "overdue" | "7" | "30" | "90" | "180";
 
@@ -98,6 +99,14 @@ export function collectUpcoming(
     people: readonly PersonSource[];
     fields: readonly FieldSource[];
     maintenance: readonly MaintenanceSource[];
+    subscriptions?: readonly {
+      id: string;
+      name: string;
+      renews_on: string | null;
+      notice_days: number | null;
+      status: string;
+      archived_at: string | null;
+    }[];
   },
   timeZone: string,
   now: Date,
@@ -141,6 +150,19 @@ export function collectUpcoming(
       who: person.name,
       what: "Leaving date — assets to recover",
       dueOn: person.termination_date,
+      timeZone,
+      now,
+    });
+  }
+
+  for (const subscription of source.subscriptions ?? []) {
+    if (subscription.archived_at || subscription.status === "cancelled") continue;
+    pushDate(items, {
+      id: `sub-${subscription.id}`,
+      href: `/subscriptions/${subscription.id}`,
+      who: subscription.name,
+      what: subscription.notice_days ? `Renewal · ${subscription.notice_days} day notice` : "Renewal",
+      dueOn: renewalAttentionDate(subscription.renews_on, subscription.notice_days),
       timeZone,
       now,
     });

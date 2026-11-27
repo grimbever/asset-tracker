@@ -30,6 +30,8 @@ export const PERMISSIONS = {
   peopleManage: "people.manage",
   locationsManage: "locations.manage",
   settingsManage: "settings.manage",
+  subscriptionsView: "subscriptions.view",
+  subscriptionsManage: "subscriptions.manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -72,6 +74,8 @@ const admin: Permission[] = [
   "requests.submit",
   "settings.manage",
   "stock.adjust",
+  "subscriptions.manage",
+  "subscriptions.view",
   "stock.take",
   "work_orders.complete",
   "work_orders.convert",
@@ -96,6 +100,8 @@ export const ROLE_SEEDS: readonly RoleSeed[] = [
       "requests.submit",
       "stock.adjust",
       "stock.take",
+      "subscriptions.manage",
+      "subscriptions.view",
       "work_orders.complete",
       "work_orders.convert",
     ],
@@ -131,7 +137,7 @@ export const ROLE_SEEDS: readonly RoleSeed[] = [
     name: "Viewer",
     active: true,
     assignable: true,
-    permissions: ["assets.scan", "assets.view", "reports.run"],
+    permissions: ["assets.scan", "assets.view", "reports.run", "subscriptions.view"],
   },
   {
     key: "kiosk",

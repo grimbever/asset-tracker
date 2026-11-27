@@ -14,6 +14,7 @@ const recordOptions = [
   ["asset_type", "Type"],
   ["custom_field", "Custom field"],
   ["invite", "Invite"],
+  ["subscription", "Subscription"],
 ] as const;
 
 const eventOptions = [
@@ -26,6 +27,8 @@ const eventOptions = [
   ["archived", "Archived"],
   ["moved", "Moved"],
   ["invite_sent", "Invite sent"],
+  ["renewed", "Renewed"],
+  ["cancelled", "Cancelled"],
 ] as const;
 
 export function HistoryFilterForm({ filters, personLabel }: { filters: HistoryFilters; personLabel: string | null }) {

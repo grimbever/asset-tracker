@@ -16,6 +16,7 @@ const links = [
   { href: "/labels", label: "Labels", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
   { href: "/people", label: "People", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
   { href: "/locations", label: "Locations", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
+  { href: "/subscriptions", label: "Subscriptions", show: (permissions: string[]) => can(permissions, PERMISSIONS.subscriptionsView) || can(permissions, PERMISSIONS.subscriptionsManage) },
   { href: "/history", label: "History", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
   { href: "/lookups", label: "Lookups", show: (permissions: string[]) => can(permissions, PERMISSIONS.settingsManage) },
   { href: "/settings", label: "Settings", show: () => true },
