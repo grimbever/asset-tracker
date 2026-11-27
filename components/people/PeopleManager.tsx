@@ -7,6 +7,8 @@ import { Banner, Button, Field, TextInput } from "@/components/ui";
 import { saveEmployeeRecord } from "@/lib/data";
 import type { EmployeeRecord } from "@/lib/data";
 import { messageFrom } from "@/lib/data/errors";
+import { assetsHref } from "@/lib/assets/filter";
+import { historyHref } from "@/lib/history/query";
 import { personDraftFrom, updatePersonDraft, type PersonDraft } from "@/lib/people/draft";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -74,7 +76,9 @@ export function PeopleManager({
               />
             ) : (
               <>
-                <p className="font-medium">{person.name}</p>
+                <p className="font-medium">
+                  <Link className="underline" href={assetsHref({ personId: person.id })}>{person.name}</Link>
+                </p>
                 <p className="text-sm text-muted">
                   {[person.title, person.archived_at ? "Archived" : person.active ? "Active" : "Inactive", person.email]
                     .filter(Boolean)
@@ -84,7 +88,10 @@ export function PeopleManager({
                   {person.hire_date ? `Hired ${person.hire_date}` : "No hire date"}
                   {person.termination_date ? ` · Leaving ${person.termination_date}` : ""}
                 </p>
-                <Link className="mt-2 inline-block text-sm underline" href={`/history?type=employee&id=${person.id}`}>History</Link>
+                <p className="mt-2 flex flex-wrap gap-3 text-sm">
+                  <Link className="underline" href={assetsHref({ personId: person.id })}>Assets</Link>
+                  <Link className="underline" href={historyHref({ q: "", subjectType: "employee", subjectId: person.id, eventType: "", from: "", to: "" })}>History</Link>
+                </p>
                 {canManage ? (
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button

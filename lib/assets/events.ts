@@ -24,6 +24,7 @@ export type AssetEvent = {
   from_state: Record<string, unknown> | null;
   to_state: Record<string, unknown> | null;
   payload: Record<string, unknown>;
+  related_employee_id?: string | null;
 };
 
 export function eventLabel(eventType: string): string {

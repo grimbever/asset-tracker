@@ -1,11 +1,16 @@
 import { AssetList } from "@/components/assets/AssetList";
 import { listAssets, listCoverPhotos, listEmployees, listLocations, listStatuses } from "@/lib/data";
 import { loadWorkspace } from "@/lib/data/workspace";
+import { isUuid } from "@/lib/ids";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
-export default async function AssetsPage() {
+export default async function AssetsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ person?: string; location?: string }>;
+}) {
   const workspace = await loadWorkspace();
   const active = workspace?.active;
   if (!workspace || !active) return null;
@@ -18,6 +23,9 @@ export default async function AssetsPage() {
       </main>
     );
   }
+  const params = await searchParams;
+  const personId = params.person && isUuid(params.person) ? params.person : null;
+  const locationId = params.location && isUuid(params.location) ? params.location : null;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
   const [assets, locations, employees, statuses] = await Promise.all([
@@ -39,6 +47,8 @@ export default async function AssetsPage() {
         canWrite={can(active.permissions, PERMISSIONS.assetsWrite)}
         photos={photos}
         statusLabels={Object.fromEntries(statuses.map((status) => [status.key, status.label]))}
+        personId={personId}
+        locationId={locationId}
       />
     </main>
   );

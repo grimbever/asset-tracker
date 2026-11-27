@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { StatusPill } from "@/components/assets/StatusPill";
 import { Button, TextInput } from "@/components/ui";
+import { assetsHref, filterAssets } from "@/lib/assets/filter";
 import { assetTypeLabel, type AssetRecord } from "@/lib/assets/types";
 import { saveLabelJob } from "@/lib/labels/job";
 import { DEFAULT_TEMPLATE_ID } from "@/lib/labels/templates";
@@ -17,6 +18,8 @@ export function AssetList({
   canWrite,
   photos = {},
   statusLabels = {},
+  personId = null,
+  locationId = null,
 }: {
   assets: AssetRecord[];
   locationNames: Record<string, string>;
@@ -24,6 +27,8 @@ export function AssetList({
   canWrite: boolean;
   photos?: Record<string, string>;
   statusLabels?: Record<string, string>;
+  personId?: string | null;
+  locationId?: string | null;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -31,18 +36,10 @@ export function AssetList({
   const [showArchived, setShowArchived] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return assets.filter((asset) => {
-      if (!showArchived && asset.archived_at) return false;
-      if (status !== "all" && asset.status !== status) return false;
-      if (!needle) return true;
-      const location = asset.location_id ? locationNames[asset.location_id] : "";
-      return [asset.name, asset.tag_id, asset.serial, asset.brand, asset.model, location]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle));
-    });
-  }, [assets, locationNames, query, showArchived, status]);
+  const filtered = useMemo(
+    () => filterAssets(assets, { query, status, showArchived, personId, locationId, locationNames }),
+    [assets, locationId, locationNames, personId, query, showArchived, status],
+  );
 
   function openExact(raw: string) {
     const parsed = parseScan(raw);
@@ -69,6 +66,24 @@ export function AssetList({
           </Link>
         ) : null}
       </div>
+      {personId || locationId ? (
+        <div className="flex flex-wrap gap-2">
+          {personId ? (
+            <Link href={assetsHref({ locationId })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+              Assigned to {assigneeNames[personId] ?? "this person"}
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">Remove person filter</span>
+            </Link>
+          ) : null}
+          {locationId ? (
+            <Link href={assetsHref({ personId })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+              At {locationNames[locationId] ?? "this location"}
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">Remove location filter</span>
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         {["all", ...Object.keys(statusLabels)].map((value) => (
           <button

@@ -1450,7 +1450,11 @@ begin
 
   perform public.write_event(
     p_event_id, v_asset.organization_id, 'asset', p_asset_id, 'checked_in',
-    public.asset_state(v_asset), public.asset_state(v_row), p_note, '{}'::jsonb
+    public.asset_state(v_asset), public.asset_state(v_row), p_note,
+    jsonb_strip_nulls(jsonb_build_object(
+      'employee_id', v_asset.assigned_employee_id,
+      'assignee_name', (select e.name from public.employees e where e.id = v_asset.assigned_employee_id)
+    ))
   );
 
   if v_asset.checkout_as_unit then
@@ -1473,7 +1477,12 @@ begin
       perform public.write_event(
         v_child_event, v_child.organization_id, 'asset', v_child.id, 'checked_in',
         public.asset_state(v_child), public.asset_state(v_row), null,
-        jsonb_build_object('with_parent', true, 'parent_tag', v_asset.tag_id)
+        jsonb_strip_nulls(jsonb_build_object(
+          'with_parent', true,
+          'parent_tag', v_asset.tag_id,
+          'employee_id', v_child.assigned_employee_id,
+          'assignee_name', (select e.name from public.employees e where e.id = v_child.assigned_employee_id)
+        ))
       );
     end loop;
   end if;

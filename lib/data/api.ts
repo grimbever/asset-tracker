@@ -6,6 +6,14 @@ import type { AssetInput, AssetRecord, AssetStatus, AssetType } from "@/lib/asse
 import { isAssetStatus, isAssetType } from "@/lib/assets/types";
 import type { AssetEvent } from "@/lib/assets/events";
 import { demoAssets, DEMO_LOCATIONS, DEMO_PEOPLE } from "@/lib/demo/catalog";
+import {
+  historyHitVisible,
+  historyRange,
+  isMissingHistorySearch,
+  readHistoryFilters,
+  searchPersonId,
+  type HistoryFilters,
+} from "@/lib/history/query";
 import { DEFAULT_TIMEZONE } from "@/lib/config";
 import { attachmentPath, isUuid, newId, newToken, normalizeEmail } from "@/lib/ids";
 import { messageFrom } from "@/lib/data/errors";
@@ -376,6 +384,7 @@ function parseEvent(value: unknown): AssetEvent {
     from_state: row.from_state && typeof row.from_state === "object" ? (row.from_state as Record<string, unknown>) : null,
     to_state: row.to_state && typeof row.to_state === "object" ? (row.to_state as Record<string, unknown>) : null,
     payload: row.payload && typeof row.payload === "object" ? (row.payload as Record<string, unknown>) : {},
+    related_employee_id: str(row.related_employee_id),
   };
 }
 
@@ -944,25 +953,72 @@ export async function saveNotificationEmails(supabase: Client, organizationId: s
 export async function searchEvents(
   supabase: Client,
   organizationId: string,
-  filters: { q?: string; subjectType?: string; subjectId?: string; eventType?: string; from?: string; to?: string },
+  filters: { q?: string; subjectType?: string; subjectId?: string; eventType?: string; from?: string; to?: string; timeZone: string },
 ): Promise<AssetEvent[]> {
-  let query = supabase.from("events").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(400);
-  if (filters.subjectType) query = query.eq("subject_type", filters.subjectType);
-  if (filters.subjectId) query = query.eq("subject_id", filters.subjectId);
+  const parsed = readHistoryFilters({
+    q: filters.q,
+    type: filters.subjectType,
+    event: filters.eventType,
+    from: filters.from,
+    to: filters.to,
+    id: filters.subjectId,
+  });
+  const range = historyRange(parsed.from, parsed.to, filters.timeZone);
+  const { data, error } = await supabase.rpc("search_events", {
+    p_organization_id: organizationId,
+    p_query: emptyToNull(parsed.q),
+    p_subject_type: emptyToNull(parsed.subjectType),
+    p_subject_id: parsed.subjectId || null,
+    p_event_type: emptyToNull(parsed.eventType),
+    p_from: range.start,
+    p_to: range.end,
+  });
+  if (!error) return (data ?? []).map(parseEvent);
+  if (!isMissingHistorySearch(error)) fail(error);
+  return searchEventsLocally(supabase, organizationId, parsed, filters.timeZone);
+}
+
+async function searchEventsLocally(
+  supabase: Client,
+  organizationId: string,
+  filters: HistoryFilters,
+  timeZone: string,
+): Promise<AssetEvent[]> {
+  const range = historyRange(filters.from, filters.to, timeZone);
+  const personScope = filters.subjectType === "employee" && Boolean(filters.subjectId);
+  let query = supabase.from("events").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(1000);
+  if (filters.subjectType && !personScope) {
+    query = query.eq("subject_type", filters.subjectType);
+    if (filters.subjectId) query = query.eq("subject_id", filters.subjectId);
+  }
   if (filters.eventType) query = query.eq("event_type", filters.eventType);
-  if (filters.from) query = query.gte("occurred_at", `${filters.from}T00:00:00Z`);
-  if (filters.to) query = query.lte("occurred_at", `${filters.to}T23:59:59Z`);
+  if (range.start) query = query.gte("occurred_at", range.start);
+  if (range.end) query = query.lt("occurred_at", range.end);
   const { data, error } = await query;
   if (error) fail(error);
-  const events = (data ?? []).map(parseEvent);
-  const needle = filters.q?.trim().toLowerCase();
-  if (!needle) return events;
-  return events.filter((event) => {
-    const haystack = [event.notes, event.actor_name, event.event_type, event.subject_type, JSON.stringify(event.payload), JSON.stringify(event.to_state)]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(needle);
+  const [assets, people] = await Promise.all([
+    listAssets(supabase, organizationId, { includeArchived: true }),
+    listEmployees(supabase, organizationId),
+  ]);
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+  const personById = new Map(people.map((person) => [person.id, person]));
+  const named = people.map((person) => ({ id: person.id, name: person.name }));
+  return (data ?? []).map(parseEvent).filter((event) => {
+    const asset = event.subject_type === "asset" ? assetById.get(event.subject_id) : undefined;
+    const personId = searchPersonId(event);
+    const person = personId ? personById.get(personId) : undefined;
+    const assignee = typeof event.payload.assignee_name === "string" ? event.payload.assignee_name : null;
+    return historyHitVisible(
+      {
+        event,
+        assetName: asset?.name ?? null,
+        assetTag: asset?.tag_id ?? null,
+        personName: person?.name ?? assignee,
+      },
+      filters,
+      timeZone,
+      named,
+    );
   });
 }
 

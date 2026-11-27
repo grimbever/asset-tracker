@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Banner, Button, Field, TextInput } from "@/components/ui";
+import { assetsHref } from "@/lib/assets/filter";
 import { saveLocationRecord } from "@/lib/data";
 import type { LocationRecord } from "@/lib/data";
 import { messageFrom } from "@/lib/data/errors";
@@ -64,7 +66,7 @@ export function LocationManager({
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span>
-                  {location.name}
+                  <Link className="underline" href={assetsHref({ locationId: location.id })}>{location.name}</Link>
                   {location.archived_at ? <span className="ml-2 text-sm text-muted">Archived</span> : null}
                 </span>
                 {canManage ? (
