@@ -9,7 +9,9 @@ import { HistoryList } from "@/components/history/HistoryList";
 import { fieldsFor } from "@/lib/assets/fields";
 import { deliverNotification } from "@/app/notify/actions";
 import type { AssetEvent } from "@/lib/assets/events";
-import { assetTypeLabel, type AssetRecord, type AssetStatus } from "@/lib/assets/types";
+import { changeableStatuses, isEndOfLife, showReturnToService, statusChangeBlocker, statusSaveLabel, type StatusChoice } from "@/lib/assets/status-change";
+import { assetTypeLabel, type AssetRecord } from "@/lib/assets/types";
+import { APP_UPDATED_MESSAGE } from "@/lib/app-update";
 import { PHOTO_MAX_EDGE_PX } from "@/lib/config";
 import {
   checkInAsset,
@@ -59,17 +61,18 @@ export function AssetScreen({
   userId: string;
   displayName: string;
   timeZone: string;
-  statuses?: { key: string; label: string; archived_at: string | null }[];
+  statuses?: { key: string; label: string; archived_at: string | null; position?: number; counts_as_available?: boolean; needs_attention?: boolean; notify?: boolean }[];
   fieldDefinitions?: { key: string; label: string; kind: string; type_key: string; archived_at: string | null }[];
 }) {
   const router = useRouter();
-  const [panel, setPanel] = useState<"checkout" | "move" | "issue" | "damage" | "delete" | null>(null);
+  const [panel, setPanel] = useState<"checkout" | "move" | "status" | "damage" | "delete" | null>(null);
   const [targetKind, setTargetKind] = useState<"person" | "location">("person");
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [locationId, setLocationId] = useState<string | null>(asset.location_id);
   const [dueOn, setDueOn] = useState("");
   const [note, setNote] = useState("");
-  const [issueStatus, setIssueStatus] = useState<AssetStatus>("broken");
+  const [nextStatus, setNextStatus] = useState("");
+  const [confirmEnd, setConfirmEnd] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -79,11 +82,26 @@ export function AssetScreen({
   const canMaintain = can(permissions, PERMISSIONS.assetsMaintain) || canWrite;
   const activePeople = employees.filter((person) => person.active && !person.archived_at);
   const openLocations = locations.filter((location) => !location.archived_at);
-  const issueStatuses = (statuses.length ? statuses : [
-    { key: "broken", label: "Broken", archived_at: null },
-    { key: "in_repair", label: "In repair", archived_at: null },
-    { key: "missing", label: "Missing", archived_at: null },
-  ]).filter((status) => !status.archived_at && status.key !== "checked_out" && status.key !== "available");
+  const statusChoices = changeableStatuses(
+    (statuses.length
+      ? statuses
+      : [
+          { key: "available", label: "Available", position: 10, archived_at: null },
+          { key: "in_repair", label: "In repair", position: 30, archived_at: null },
+          { key: "broken", label: "Broken", position: 40, archived_at: null },
+          { key: "missing", label: "Missing", position: 50, archived_at: null },
+          { key: "disposed", label: "Disposed", position: 70, archived_at: null },
+          { key: "destroyed", label: "Destroyed", position: 80, archived_at: null },
+        ]
+    ).map((status) => ({
+      key: status.key,
+      label: status.label,
+      position: status.position,
+      archivedAt: status.archived_at,
+    })),
+    asset.status,
+  );
+  const currentStatusLabel = statuses.find((status) => status.key === asset.status)?.label;
   const detailFields = fieldDefinitions.filter((field) => field.type_key === asset.type);
 
   async function notify(eventId: string) {
@@ -121,6 +139,26 @@ export function AssetScreen({
     });
   }
 
+  async function saveStatus(next: string, statusNote: string, confirmed: boolean) {
+    const blocker = statusChangeBlocker({ next, note: statusNote, confirmed });
+    if (blocker) {
+      setMessage(null);
+      setError(blocker);
+      return;
+    }
+    await run(async () => {
+      const supabase = getBrowserSupabase();
+      if (!supabase) return;
+      const result = await setAssetStatus(supabase, asset.id, next, statusNote);
+      await notify(result.eventId);
+      setPanel(null);
+      setNote("");
+      setNextStatus("");
+      setConfirmEnd(false);
+      setMessage(next === "available" ? "Marked available." : "Status updated.");
+    });
+  }
+
   async function checkIn() {
     await run(async () => {
       const supabase = getBrowserSupabase();
@@ -144,7 +182,7 @@ export function AssetScreen({
           <h1 className="font-serif text-4xl tracking-tight">{asset.name}</h1>
           <p className="mt-2 text-sm text-muted">{assetTypeLabel(asset.type)}</p>
         </div>
-        <StatusPill status={asset.status} />
+        <StatusPill status={asset.status} label={currentStatusLabel} />
       </div>
 
       <dl className="grid gap-3 rounded-3xl bg-card p-4 sm:grid-cols-2">
@@ -171,7 +209,16 @@ export function AssetScreen({
       </dl>
 
       {message ? <Banner tone="ok">{message}</Banner> : null}
-      {error ? <Banner tone="bad">{error}</Banner> : null}
+      {error ? (
+        <div className="grid gap-2">
+          <Banner tone="bad">{error}</Banner>
+          {error === APP_UPDATED_MESSAGE ? (
+            <Button type="button" variant="ink" onClick={() => window.location.reload()}>
+              Reload
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {canCheckout && asset.status === "available" ? (
@@ -189,9 +236,14 @@ export function AssetScreen({
             Move
           </Button>
         ) : null}
+        {canMaintain && showReturnToService(asset.status) ? (
+          <Button variant="ghost" className="w-full" disabled={pending} onClick={() => void saveStatus("available", "", true)}>
+            Mark repaired / return to service
+          </Button>
+        ) : null}
         {canMaintain ? (
-          <Button variant="ghost" className="w-full" onClick={() => setPanel("issue")}>
-            Report issue
+          <Button variant="ghost" className="w-full" onClick={() => setPanel("status")}>
+            Change status
           </Button>
         ) : null}
       </div>
@@ -314,35 +366,23 @@ export function AssetScreen({
         </section>
       ) : null}
 
-      {panel === "issue" ? (
-        <section className="grid gap-3 rounded-3xl border border-line bg-card p-4">
-          <h2 className="font-serif text-2xl">Report issue</h2>
-          <div className="flex flex-wrap gap-2">
-            {issueStatuses.map((status) => (
-              <Button key={status.key} type="button" variant={issueStatus === status.key ? "ink" : "ghost"} onClick={() => setIssueStatus(status.key)}>
-                {status.label}
-              </Button>
-            ))}
-          </div>
-          <Field label="Note, optional">
-            <TextInput value={note} onChange={(event) => setNote(event.target.value)} />
-          </Field>
-          <Button
-            disabled={pending}
-            onClick={() =>
-              void run(async () => {
-                const supabase = getBrowserSupabase();
-                if (!supabase) return;
-                const result = await setAssetStatus(supabase, asset.id, issueStatus, note);
-                await notify(result.eventId);
-                setPanel(null);
-                setMessage("Status updated.");
-              })
-            }
-          >
-            Save status
-          </Button>
-        </section>
+      {panel === "status" ? (
+        <StatusChangePanel
+          current={asset.status}
+          currentLabel={currentStatusLabel}
+          choices={statusChoices}
+          nextStatus={nextStatus}
+          note={note}
+          confirmEnd={confirmEnd}
+          pending={pending}
+          onPick={(key) => {
+            setNextStatus(key);
+            setConfirmEnd(false);
+          }}
+          onNote={setNote}
+          onConfirm={setConfirmEnd}
+          onSave={() => void saveStatus(nextStatus, note, confirmEnd)}
+        />
       ) : null}
 
       <section className="grid gap-3">
@@ -506,6 +546,67 @@ export function AssetScreen({
         </section>
       ) : null}
     </div>
+  );
+}
+
+function StatusChangePanel({
+  current,
+  currentLabel,
+  choices,
+  nextStatus,
+  note,
+  confirmEnd,
+  pending,
+  onPick,
+  onNote,
+  onConfirm,
+  onSave,
+}: {
+  current: string;
+  currentLabel?: string;
+  choices: StatusChoice[];
+  nextStatus: string;
+  note: string;
+  confirmEnd: boolean;
+  pending: boolean;
+  onPick: (key: string) => void;
+  onNote: (value: string) => void;
+  onConfirm: (value: boolean) => void;
+  onSave: () => void;
+}) {
+  const ending = isEndOfLife(nextStatus);
+  const chosen = choices.find((status) => status.key === nextStatus);
+  return (
+    <section className="grid gap-3 rounded-3xl border border-line bg-card p-4">
+      <h2 className="font-serif text-2xl">Change status</h2>
+      <p className="text-sm text-muted">
+        Now: <StatusPill status={current} label={currentLabel} />
+      </p>
+      <p className="text-sm text-muted">Check out stays on its own button. Pick any other active status, including Available.</p>
+      {choices.length ? (
+        <div className="flex flex-wrap gap-2">
+          {choices.map((status) => (
+            <Button key={status.key} type="button" variant={nextStatus === status.key ? "ink" : "ghost"} onClick={() => onPick(status.key)}>
+              {status.label}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted">No other statuses are available.</p>
+      )}
+      <Field label={ending ? "Note" : "Note, optional"} hint={ending ? "Disposed and destroyed need a note." : undefined}>
+        <TextInput value={note} onChange={(event) => onNote(event.target.value)} />
+      </Field>
+      {ending ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input className="mt-1 h-5 w-5" type="checkbox" checked={confirmEnd} onChange={(event) => onConfirm(event.target.checked)} />
+          <span>Confirm {chosen?.label ?? "this"}. This takes the item out of service.</span>
+        </label>
+      ) : null}
+      <Button disabled={pending || !nextStatus} onClick={onSave}>
+        {statusSaveLabel(nextStatus || "status")}
+      </Button>
+    </section>
   );
 }
 

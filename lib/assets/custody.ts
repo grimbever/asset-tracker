@@ -15,7 +15,7 @@ const CLOSED: ReadonlySet<AssetStatus> = new Set(["retired", "disposed", "destro
 
 export function assertCanCheckout(status: AssetStatus): void {
   if (status === "checked_out") throw new Error("Already checked out.");
-  if (CLOSED.has(status)) throw new Error("Retired, disposed, and destroyed items stay on the register and are not checked out.");
+  if (CLOSED.has(status)) throw new Error("Disposed and destroyed items stay on the register and are not checked out.");
   if (status !== "available") throw new Error("Check this item in, or mark it available, before checking it out.");
 }
 
