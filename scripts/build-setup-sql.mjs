@@ -5,6 +5,7 @@ const milestone2 = readFileSync("supabase/migrations/20261124000000_milestone2.s
 const history = readFileSync("supabase/migrations/20261125000000_history_links.sql", "utf8");
 const inviteSent = readFileSync("supabase/migrations/20261127000000_invite_sent.sql", "utf8");
 const statusChange = readFileSync("supabase/migrations/20261127000000_status_change.sql", "utf8");
+const historyLabels = readFileSync("supabase/migrations/20261128000000_history_labels.sql", "utf8");
 const subscriptions = readFileSync("supabase/migrations/20261129000000_subscriptions.sql", "utf8");
 const header = `-- Asset Tracker setup
 -- Paste this whole file into the Supabase SQL Editor once.
@@ -15,6 +16,6 @@ const header = `-- Asset Tracker setup
 
 writeFileSync(
   "supabase/setup.sql",
-  `${header}${init}\n-- Milestone 2\n${milestone2}\n-- History links\n${history}\n-- Invite email\n${inviteSent}\n-- Status change\n${statusChange}\n-- Subscriptions\n${subscriptions}`,
+  `${header}${init}\n-- Milestone 2\n${milestone2}\n-- History links\n${history}\n-- Invite email\n${inviteSent}\n-- Status change\n${statusChange}\n-- History labels\n${historyLabels}\n-- Subscriptions\n${subscriptions}`,
 );
 console.log("wrote supabase/setup.sql");

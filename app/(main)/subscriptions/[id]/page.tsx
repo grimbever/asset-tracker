@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { SubscriptionDetail } from "@/components/subscriptions/SubscriptionDetail";
 import { listAssets, listEmployees } from "@/lib/data";
 import { loadWorkspace } from "@/lib/data/workspace";
+import { historyNames } from "@/lib/history/display";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import {
   listSubscriptionCategories,
@@ -50,6 +51,11 @@ export default async function SubscriptionPage({ params }: { params: Promise<{ i
         timeZone={active.organization.timezone}
         canManage={canManage}
         today={today}
+        names={historyNames({
+          people,
+          categories,
+          assets,
+        })}
       />
     </main>
   );

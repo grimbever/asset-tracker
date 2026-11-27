@@ -8,6 +8,7 @@ import {
   listOpenMaintenance,
   listStatuses,
 } from "@/lib/data";
+import { assetsHref } from "@/lib/assets/filter";
 import { statusCards } from "@/lib/lookups";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { PERMISSIONS, can } from "@/lib/permissions";
@@ -25,7 +26,7 @@ export default async function DashboardPage() {
   const canSeeSubscriptions = can(active.permissions, PERMISSIONS.subscriptionsView) || can(active.permissions, PERMISSIONS.subscriptionsManage);
   const [assets, people, fields, maintenance, statuses] = canView
     ? await Promise.all([
-        listAssets(supabase, active.organization.id),
+        listAssets(supabase, active.organization.id, { includeArchived: true }),
         listEmployees(supabase, active.organization.id),
         listFieldDefinitions(supabase, active.organization.id),
         listOpenMaintenance(supabase, active.organization.id),
@@ -71,8 +72,11 @@ export default async function DashboardPage() {
       needsAttention: status.needs_attention,
       archivedAt: status.archived_at,
     })),
-    assets,
+    assets.map((asset) => ({ status: asset.status, archivedAt: asset.archived_at })),
   );
+  const listedAssets = assets.filter((asset) => !asset.archived_at).length;
+  const cardClass =
+    "block min-h-24 rounded-3xl bg-card p-4 outline-offset-2 transition hover:bg-paper-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-green";
 
   return (
     <main className="mx-auto grid max-w-5xl gap-6 px-4 py-6">
@@ -85,19 +89,19 @@ export default async function DashboardPage() {
       {canView ? (
         <>
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-3xl bg-card p-4">
+            <Link href="/assets" className={cardClass} aria-label={`Assets, ${listedAssets}`}>
               <p className="text-sm text-muted">Assets</p>
-              <p className="font-serif text-3xl">{assets.length}</p>
-            </div>
+              <p className="font-serif text-3xl">{listedAssets}</p>
+            </Link>
             {cards.map((card) => (
-              <div key={card.key} className="rounded-3xl bg-card p-4">
+              <Link key={card.key} href={assetsHref({ status: card.key })} className={cardClass} aria-label={`${card.label}, ${card.count}`}>
                 <p className="text-sm text-muted">{card.label}</p>
                 <p className="font-serif text-3xl">{card.count}</p>
-              </div>
+              </Link>
             ))}
           </section>
           <UpcomingList items={upcoming} timeZone={active.organization.timezone} />
-          {assets.length === 0 && can(active.permissions, PERMISSIONS.assetsWrite) ? (
+          {listedAssets === 0 && can(active.permissions, PERMISSIONS.assetsWrite) ? (
             <DemoButton organizationId={active.organization.id} />
           ) : null}
         </>

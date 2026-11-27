@@ -6,6 +6,7 @@ import { useState } from "react";
 import { HistoryList } from "@/components/history/HistoryList";
 import { Banner, Button, Field, TextInput } from "@/components/ui";
 import type { AssetEvent } from "@/lib/assets/events";
+import { EMPTY_HISTORY_NAMES, type HistoryNames } from "@/lib/history/display";
 import { messageFrom } from "@/lib/data/errors";
 import { newId } from "@/lib/ids";
 import { cycleLabel, displaySubscriptionStatus, statusLabel } from "@/lib/subscriptions/plan";
@@ -29,6 +30,7 @@ export function SubscriptionDetail({
   timeZone,
   canManage,
   today,
+  names = EMPTY_HISTORY_NAMES,
 }: {
   subscription: SubscriptionRecord;
   categoryName: string | null;
@@ -41,6 +43,7 @@ export function SubscriptionDetail({
   timeZone: string;
   canManage: boolean;
   today: string;
+  names?: HistoryNames;
 }) {
   const router = useRouter();
   const [paid, setPaid] = useState("");
@@ -193,7 +196,7 @@ export function SubscriptionDetail({
       ) : null}
       <section className="grid gap-3">
         <h2 className="font-serif text-2xl">History</h2>
-        <HistoryList events={events} timeZone={timeZone} />
+        <HistoryList events={events} timeZone={timeZone} names={names} />
       </section>
     </div>
   );

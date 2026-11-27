@@ -1,9 +1,11 @@
 import { HistoryFilterForm } from "@/components/history/HistoryFilters";
 import { HistoryList } from "@/components/history/HistoryList";
 import { Banner } from "@/components/ui";
-import { listAssets, listEmployees, listLocations, searchEvents } from "@/lib/data";
+import { listAssets, listEmployees, listLocations, listRoles, listStatuses, listTypes, searchEvents } from "@/lib/data";
+import { listSubscriptionCategories, listSubscriptions } from "@/lib/subscriptions/data";
 import type { AssetEvent } from "@/lib/assets/events";
 import { loadWorkspace } from "@/lib/data/workspace";
+import { EMPTY_HISTORY_NAMES, historyNames, type HistoryNames } from "@/lib/history/display";
 import { HISTORY_LOAD_ERROR, readHistoryFilters } from "@/lib/history/query";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -26,18 +28,34 @@ export default async function HistoryPage({
   let loadError: string | null = null;
   let subjects: Record<string, string> = {};
   let personLabel: string | null = null;
+  let names: HistoryNames = EMPTY_HISTORY_NAMES;
   try {
-    const [history, assets, people, locations] = await Promise.all([
+    const [history, assets, people, locations, statuses, types, roles] = await Promise.all([
       searchEvents(supabase, active.organization.id, { ...filters, timeZone: active.organization.timezone }),
       listAssets(supabase, active.organization.id, { includeArchived: true }),
       listEmployees(supabase, active.organization.id),
       listLocations(supabase, active.organization.id),
+      listStatuses(supabase, active.organization.id),
+      listTypes(supabase, active.organization.id),
+      listRoles(supabase, active.organization.id),
     ]);
     events = history.events;
     loadError = history.error;
     for (const asset of assets) subjects[`asset:${asset.id}`] = asset.name;
     for (const person of people) subjects[`employee:${person.id}`] = person.name;
     for (const location of locations) subjects[`location:${location.id}`] = location.name;
+    let categories: { id: string; name: string }[] = [];
+    try {
+      const [loadedCategories, subscriptions] = await Promise.all([
+        listSubscriptionCategories(supabase, active.organization.id),
+        listSubscriptions(supabase, active.organization.id, false),
+      ]);
+      categories = loadedCategories;
+      for (const subscription of subscriptions) subjects[`subscription:${subscription.id}`] = subscription.name;
+    } catch (caught) {
+      console.error("Subscription names for history were skipped.", caught);
+    }
+    names = historyNames({ people, locations, assets, categories, statuses, types, roles });
     personLabel =
       filters.subjectType === "employee" && filters.subjectId
         ? (people.find((person) => person.id === filters.subjectId)?.name ?? "This person")
@@ -56,7 +74,7 @@ export default async function HistoryPage({
         filters={filters}
         personLabel={personLabel}
       />
-      {loadError ? <Banner tone="bad">{loadError}</Banner> : <HistoryList events={events} timeZone={active.organization.timezone} subjects={subjects} />}
+      {loadError ? <Banner tone="bad">{loadError}</Banner> : <HistoryList events={events} timeZone={active.organization.timezone} subjects={subjects} names={names} />}
     </main>
   );
 }
