@@ -20,6 +20,7 @@ export function AssetList({
   statusLabels = {},
   personId = null,
   locationId = null,
+  statusKey = null,
 }: {
   assets: AssetRecord[];
   locationNames: Record<string, string>;
@@ -29,10 +30,11 @@ export function AssetList({
   statusLabels?: Record<string, string>;
   personId?: string | null;
   locationId?: string | null;
+  statusKey?: string | null;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("all");
+  const [status, setStatus] = useState(statusKey ?? "all");
   const [showArchived, setShowArchived] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
@@ -66,17 +68,24 @@ export function AssetList({
           </Link>
         ) : null}
       </div>
-      {personId || locationId ? (
+      {personId || locationId || status !== "all" ? (
         <div className="flex flex-wrap gap-2">
+          {status !== "all" ? (
+            <Link href={assetsHref({ personId, locationId })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+              {statusLabels[status] ?? status}
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">Remove status filter</span>
+            </Link>
+          ) : null}
           {personId ? (
-            <Link href={assetsHref({ locationId })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+            <Link href={assetsHref({ locationId, status })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
               Assigned to {assigneeNames[personId] ?? "this person"}
               <span aria-hidden="true">×</span>
               <span className="sr-only">Remove person filter</span>
             </Link>
           ) : null}
           {locationId ? (
-            <Link href={assetsHref({ personId })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+            <Link href={assetsHref({ personId, status })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
               At {locationNames[locationId] ?? "this location"}
               <span aria-hidden="true">×</span>
               <span className="sr-only">Remove location filter</span>
@@ -90,7 +99,10 @@ export function AssetList({
             key={value}
             type="button"
             className={`rounded-full px-3 py-1 text-sm ${status === value ? "bg-ink text-paper" : "bg-card"}`}
-            onClick={() => setStatus(value)}
+            onClick={() => {
+              setStatus(value);
+              router.push(assetsHref({ personId, locationId, status: value === "all" ? null : value }));
+            }}
           >
             {value === "all" ? "All" : statusLabels[value] ?? value}
           </button>

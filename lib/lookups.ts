@@ -7,7 +7,7 @@ export type StatusCard = {
 
 export function statusCards(
   statuses: readonly { key: string; label: string; position: number; needsAttention?: boolean; archivedAt?: string | null }[],
-  assets: readonly { status: string }[],
+  assets: readonly { status: string; archivedAt?: string | null }[],
 ): StatusCard[] {
   return [...statuses]
     .filter((status) => !status.archivedAt)
@@ -15,7 +15,11 @@ export function statusCards(
     .map((status) => ({
       key: status.key,
       label: status.label,
-      count: assets.filter((asset) => asset.status === status.key).length,
+      count: assets.filter((asset) => {
+        if (asset.status !== status.key) return false;
+        if (!asset.archivedAt) return true;
+        return status.key === "disposed" || status.key === "destroyed";
+      }).length,
       needsAttention: Boolean(status.needsAttention),
     }));
 }

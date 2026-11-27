@@ -1,4 +1,5 @@
 import { AssetList } from "@/components/assets/AssetList";
+import { resolveStatusKey } from "@/lib/assets/filter";
 import { listAssets, listCoverPhotos, listEmployees, listLocations, listStatuses } from "@/lib/data";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { isUuid } from "@/lib/ids";
@@ -9,7 +10,7 @@ import Link from "next/link";
 export default async function AssetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ person?: string; location?: string }>;
+  searchParams: Promise<{ person?: string; location?: string; status?: string }>;
 }) {
   const workspace = await loadWorkspace();
   const active = workspace?.active;
@@ -34,6 +35,7 @@ export default async function AssetsPage({
     listEmployees(supabase, active.organization.id),
     listStatuses(supabase, active.organization.id),
   ]);
+  const statusKey = resolveStatusKey(params.status, statuses);
   const photos = await listCoverPhotos(supabase, active.organization.id, assets.map((asset) => asset.id));
   const locationNames = Object.fromEntries(locations.map((location) => [location.id, location.name]));
   const assigneeNames = Object.fromEntries(employees.map((person) => [person.id, person.name]));
@@ -41,6 +43,7 @@ export default async function AssetsPage({
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1 className="mb-4 font-serif text-4xl tracking-tight">Assets</h1>
       <AssetList
+        key={`${personId ?? ""}-${locationId ?? ""}-${statusKey ?? "all"}`}
         assets={assets}
         locationNames={locationNames}
         assigneeNames={assigneeNames}
@@ -49,6 +52,7 @@ export default async function AssetsPage({
         statusLabels={Object.fromEntries(statuses.map((status) => [status.key, status.label]))}
         personId={personId}
         locationId={locationId}
+        statusKey={statusKey}
       />
     </main>
   );
