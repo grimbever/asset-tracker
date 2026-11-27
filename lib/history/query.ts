@@ -1,5 +1,6 @@
 import type { AssetEvent } from "@/lib/assets/events";
 import { readFieldChanges } from "@/lib/audit";
+import { EMPTY_HISTORY_NAMES, presentHistoryChange, type HistoryNames } from "@/lib/history/display";
 import { isUuid } from "@/lib/ids";
 
 export type HistoryFilters = {
@@ -21,6 +22,7 @@ export type HistoryHit = {
   assetName?: string | null;
   assetTag?: string | null;
   personName?: string | null;
+  names?: HistoryNames;
 };
 
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -123,6 +125,7 @@ export function eventMentionsEmployee(
 
 export function historySearchText(hit: HistoryHit): string {
   const changes = readFieldChanges(hit.event.payload);
+  const shown = changes.map((change) => presentHistoryChange(change, hit.names ?? EMPTY_HISTORY_NAMES));
   return [
     hit.event.notes,
     hit.event.actor_name,
@@ -134,6 +137,7 @@ export function historySearchText(hit: HistoryHit): string {
     textValue(hit.event.payload.tag_id),
     textValue(hit.event.payload.location_name),
     ...changes.flatMap((change) => [change.field, change.before, change.after]),
+    ...shown.flatMap((change) => [change.label, change.before, change.after]),
   ]
     .filter((value): value is string => Boolean(value && value.trim()))
     .join(" ")

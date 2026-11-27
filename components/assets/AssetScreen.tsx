@@ -6,6 +6,7 @@ import { useState } from "react";
 import { StatusPill } from "@/components/assets/StatusPill";
 import { Banner, Button, Field, TextInput } from "@/components/ui";
 import { HistoryList } from "@/components/history/HistoryList";
+import { EMPTY_HISTORY_NAMES, type HistoryNames } from "@/lib/history/display";
 import { fieldsFor } from "@/lib/assets/fields";
 import { deliverNotification } from "@/app/notify/actions";
 import type { AssetEvent } from "@/lib/assets/events";
@@ -45,6 +46,7 @@ export function AssetScreen({
   userId,
   displayName,
   timeZone,
+  names = EMPTY_HISTORY_NAMES,
   statuses = [],
   fieldDefinitions = [],
 }: {
@@ -61,6 +63,7 @@ export function AssetScreen({
   userId: string;
   displayName: string;
   timeZone: string;
+  names?: HistoryNames;
   statuses?: { key: string; label: string; archived_at: string | null; position?: number; counts_as_available?: boolean; needs_attention?: boolean; notify?: boolean }[];
   fieldDefinitions?: { key: string; label: string; kind: string; type_key: string; archived_at: string | null }[];
 }) {
@@ -484,7 +487,7 @@ export function AssetScreen({
 
       <section className="grid gap-3">
         <h2 className="font-serif text-2xl">History</h2>
-        <HistoryList events={events} timeZone={timeZone} />
+        <HistoryList events={events} timeZone={timeZone} names={names} />
       </section>
 
       <div className="flex flex-wrap gap-2">

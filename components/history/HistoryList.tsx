@@ -2,15 +2,18 @@ import { readFieldChanges } from "@/lib/audit";
 import { eventLabel, eventSummary } from "@/lib/assets/events";
 import type { AssetEvent } from "@/lib/assets/events";
 import { formatWhen } from "@/lib/format";
+import { EMPTY_HISTORY_NAMES, presentHistoryChange, type HistoryNames } from "@/lib/history/display";
 
 export function HistoryList({
   events,
   timeZone,
   subjects = {},
+  names = EMPTY_HISTORY_NAMES,
 }: {
   events: AssetEvent[];
   timeZone: string;
   subjects?: Record<string, string>;
+  names?: HistoryNames;
 }) {
   if (events.length === 0) return <p className="text-sm text-muted">No history matches.</p>;
   return (
@@ -36,14 +39,17 @@ export function HistoryList({
             {event.notes ? <p className="mt-2 text-sm">{event.notes}</p> : null}
             {changes.length > 0 ? (
               <dl className="mt-2 grid gap-1 text-sm">
-                {changes.map((change) => (
-                  <div key={change.field} className="grid gap-1 sm:grid-cols-[8rem_1fr]">
-                    <dt className="text-muted">{change.field.replaceAll("_", " ")}</dt>
-                    <dd>
-                      {change.before ?? "—"} → {change.after ?? "—"}
-                    </dd>
-                  </div>
-                ))}
+                {changes.map((change) => {
+                  const shown = presentHistoryChange(change, names);
+                  return (
+                    <div key={change.field} className="grid gap-1 sm:grid-cols-[11rem_1fr]">
+                      <dt className="text-muted">{shown.label}</dt>
+                      <dd>
+                        {shown.before} → {shown.after}
+                      </dd>
+                    </div>
+                  );
+                })}
               </dl>
             ) : null}
           </li>

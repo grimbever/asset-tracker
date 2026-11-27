@@ -1,5 +1,7 @@
 import type { AssetRecord } from "@/lib/assets/types";
 
+const END_OF_LIFE = new Set(["disposed", "destroyed"]);
+
 export type AssetListFilters = {
   query: string;
   status: string;
@@ -9,10 +11,28 @@ export type AssetListFilters = {
   locationNames: Record<string, string>;
 };
 
+/** Disposed and destroyed stay on the filtered list even when the asset is archived. */
+export function statusKeepsArchived(status: string): boolean {
+  return END_OF_LIFE.has(status);
+}
+
+export function resolveStatusKey(
+  raw: string | undefined,
+  statuses: readonly { id: string; key: string }[],
+): string | null {
+  const value = raw?.trim() ?? "";
+  if (!value || value === "all") return null;
+  const match = statuses.find((status) => status.key === value || status.id === value);
+  if (match) return match.key;
+  if (/^[0-9a-f-]{36}$/i.test(value)) return null;
+  return value;
+}
+
 export function filterAssets(assets: readonly AssetRecord[], filters: AssetListFilters): AssetRecord[] {
   const needle = filters.query.trim().toLowerCase();
+  const keepArchived = statusKeepsArchived(filters.status);
   return assets.filter((asset) => {
-    if (!filters.showArchived && asset.archived_at) return false;
+    if (asset.archived_at && !filters.showArchived && !keepArchived) return false;
     if (filters.personId && asset.assigned_employee_id !== filters.personId) return false;
     if (filters.locationId && asset.location_id !== filters.locationId) return false;
     if (filters.status !== "all" && asset.status !== filters.status) return false;
@@ -24,10 +44,11 @@ export function filterAssets(assets: readonly AssetRecord[], filters: AssetListF
   });
 }
 
-export function assetsHref(filters: { personId?: string | null; locationId?: string | null }): string {
+export function assetsHref(filters: { personId?: string | null; locationId?: string | null; status?: string | null }): string {
   const params = new URLSearchParams();
   if (filters.personId) params.set("person", filters.personId);
   if (filters.locationId) params.set("location", filters.locationId);
+  if (filters.status && filters.status !== "all") params.set("status", filters.status);
   const query = params.toString();
   return query ? `/assets?${query}` : "/assets";
 }
