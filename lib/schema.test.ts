@@ -19,6 +19,10 @@ describe("schema", () => {
     expect(historyLinks).toContain("function public.search_events");
     expect(historyLinks).toContain("ilike");
     expect(historyLinks).toContain("event_mentions_employee");
+    expect(historyLinks).toContain("grant execute on function public.event_mentions_employee(public.events, uuid) to authenticated");
+    expect(historyLinks).toContain("grant execute on function public.event_search_text(public.events) to authenticated");
+    expect(historyLinks).toContain("grant execute on function public.uuid_or_null(text) to authenticated");
+    expect(historyLinks).toContain("grant execute on function public.derive_event_employee(uuid, text, uuid, text, jsonb, jsonb, jsonb) to authenticated");
     expect(milestone2).toContain("add column if not exists title");
     expect(milestone2).toContain("settings.manage");
     expect(milestone2).toContain("archived_at");

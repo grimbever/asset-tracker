@@ -1,8 +1,10 @@
 import { HistoryFilterForm } from "@/components/history/HistoryFilters";
 import { HistoryList } from "@/components/history/HistoryList";
+import { Banner } from "@/components/ui";
 import { listAssets, listEmployees, listLocations, searchEvents } from "@/lib/data";
+import type { AssetEvent } from "@/lib/assets/events";
 import { loadWorkspace } from "@/lib/data/workspace";
-import { readHistoryFilters } from "@/lib/history/query";
+import { HISTORY_LOAD_ERROR, readHistoryFilters } from "@/lib/history/query";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -20,20 +22,31 @@ export default async function HistoryPage({
   const filters = readHistoryFilters(await searchParams);
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
-  const [events, assets, people, locations] = await Promise.all([
-    searchEvents(supabase, active.organization.id, { ...filters, timeZone: active.organization.timezone }),
-    listAssets(supabase, active.organization.id, { includeArchived: true }),
-    listEmployees(supabase, active.organization.id),
-    listLocations(supabase, active.organization.id),
-  ]);
-  const subjects: Record<string, string> = {};
-  for (const asset of assets) subjects[`asset:${asset.id}`] = asset.name;
-  for (const person of people) subjects[`employee:${person.id}`] = person.name;
-  for (const location of locations) subjects[`location:${location.id}`] = location.name;
-  const personLabel =
-    filters.subjectType === "employee" && filters.subjectId
-      ? (people.find((person) => person.id === filters.subjectId)?.name ?? "This person")
-      : null;
+  let events: AssetEvent[] = [];
+  let loadError: string | null = null;
+  let subjects: Record<string, string> = {};
+  let personLabel: string | null = null;
+  try {
+    const [history, assets, people, locations] = await Promise.all([
+      searchEvents(supabase, active.organization.id, { ...filters, timeZone: active.organization.timezone }),
+      listAssets(supabase, active.organization.id, { includeArchived: true }),
+      listEmployees(supabase, active.organization.id),
+      listLocations(supabase, active.organization.id),
+    ]);
+    events = history.events;
+    loadError = history.error;
+    for (const asset of assets) subjects[`asset:${asset.id}`] = asset.name;
+    for (const person of people) subjects[`employee:${person.id}`] = person.name;
+    for (const location of locations) subjects[`location:${location.id}`] = location.name;
+    personLabel =
+      filters.subjectType === "employee" && filters.subjectId
+        ? (people.find((person) => person.id === filters.subjectId)?.name ?? "This person")
+        : null;
+  } catch (caught) {
+    console.error("History page failed.", caught);
+    loadError = HISTORY_LOAD_ERROR;
+    subjects = {};
+  }
   return (
     <main className="mx-auto grid max-w-3xl gap-4 px-4 py-6">
       <h1 className="font-serif text-4xl tracking-tight">History</h1>
@@ -43,7 +56,7 @@ export default async function HistoryPage({
         filters={filters}
         personLabel={personLabel}
       />
-      <HistoryList events={events} timeZone={active.organization.timezone} subjects={subjects} />
+      {loadError ? <Banner tone="bad">{loadError}</Banner> : <HistoryList events={events} timeZone={active.organization.timezone} subjects={subjects} />}
     </main>
   );
 }

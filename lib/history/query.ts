@@ -178,11 +178,20 @@ export function searchPersonId(event: AssetEvent): string | null {
   return stateEmployeeId(event.to_state) ?? stateEmployeeId(event.from_state);
 }
 
+export const HISTORY_LOAD_ERROR = "History could not be loaded. Refresh the page and try again.";
+
 export function isMissingHistorySearch(error: { code?: string; message?: string } | null | undefined): boolean {
   if (!error) return false;
   if (error.code === "PGRST202") return true;
   const message = error.message ?? "";
   return /search_events/i.test(message) && /could not find|does not exist|schema cache/i.test(message);
+}
+
+/** The database search runs as the signed-in user. A helper-permission or missing-function error can use the in-app filter. */
+export function historyRpcPlan(error: { code?: string; message?: string } | null | undefined): "ok" | "denied" | "fallback" {
+  if (!error) return "ok";
+  if (/cannot view history/i.test(error.message ?? "")) return "denied";
+  return "fallback";
 }
 
 function payloadEmployeeId(event: AssetEvent): string | null {

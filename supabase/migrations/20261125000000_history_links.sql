@@ -349,4 +349,9 @@ revoke all on function public.event_mentions_employee(public.events, uuid) from 
 revoke all on function public.event_search_text(public.events) from public, anon, authenticated;
 revoke all on function public.reject_mutation() from public, anon, authenticated;
 
+-- search_events runs as the signed-in user, so that user must be allowed to call the helpers.
+grant execute on function public.uuid_or_null(text) to authenticated;
+grant execute on function public.derive_event_employee(uuid, text, uuid, text, jsonb, jsonb, jsonb) to authenticated;
+grant execute on function public.event_mentions_employee(public.events, uuid) to authenticated;
+grant execute on function public.event_search_text(public.events) to authenticated;
 grant execute on function public.search_events(uuid, text, text, uuid, text, timestamptz, timestamptz) to authenticated;
