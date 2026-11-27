@@ -28,6 +28,7 @@ export default async function SettingsPage() {
         members={members}
         invites={invites}
         canManage={canManage}
+        canSetup={can(active.permissions, PERMISSIONS.settingsManage)}
       />
     </main>
   );

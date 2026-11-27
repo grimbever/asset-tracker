@@ -1,4 +1,6 @@
 import { PeopleManager } from "@/components/people/PeopleManager";
+import { permissionReady } from "@/lib/company/data";
+import { modulePageAllowed } from "@/lib/company/matrix";
 import { listEmployees } from "@/lib/data";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { PERMISSIONS, can } from "@/lib/permissions";
@@ -8,10 +10,16 @@ export default async function PeoplePage() {
   const workspace = await loadWorkspace();
   const active = workspace?.active;
   if (!workspace || !active) return null;
-  const allowed = can(active.permissions, PERMISSIONS.assetsView) || can(active.permissions, PERMISSIONS.settingsManage);
-  if (!allowed) return <main className="px-4 py-8">You cannot view people.</main>;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
+  const ready = await permissionReady(supabase, active.organization.id, PERMISSIONS.peopleView);
+  const allowed = modulePageAllowed({
+    ready,
+    permissions: active.permissions,
+    required: [PERMISSIONS.peopleView, PERMISSIONS.peopleManage, PERMISSIONS.settingsManage],
+    legacy: [PERMISSIONS.assetsView, PERMISSIONS.settingsManage],
+  });
+  if (!allowed) return <main className="px-4 py-8">You cannot view people.</main>;
   const people = await listEmployees(supabase, active.organization.id);
   return (
     <main className="mx-auto max-w-xl px-4 py-6">
@@ -19,7 +27,7 @@ export default async function PeoplePage() {
       <PeopleManager
         organizationId={active.organization.id}
         people={people}
-        canManage={can(active.permissions, PERMISSIONS.settingsManage)}
+        canManage={can(active.permissions, PERMISSIONS.peopleManage) || can(active.permissions, PERMISSIONS.settingsManage)}
       />
     </main>
   );

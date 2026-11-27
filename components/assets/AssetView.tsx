@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { AssetScreen } from "@/components/assets/AssetScreen";
 import { getAsset, listAssets, listAttachments, listEmployees, listEvents, listFieldDefinitions, listLocations, listStatuses, listTypes } from "@/lib/data";
+import { defaultDueDate } from "@/lib/company/matrix";
+import { todayInZone } from "@/lib/format";
 import { historyNames } from "@/lib/history/display";
 import type { MembershipContext } from "@/lib/data";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -31,6 +33,17 @@ export async function AssetView({
     listFieldDefinitions(supabase, membership.organization.id),
   ]);
   const parent = asset.parent_asset_id ? assets.find((item) => item.id === asset.parent_asset_id) : undefined;
+  const { data: company } = await supabase
+    .from("organization_settings")
+    .select("checkout_due_required, default_checkout_days, require_note_broken, require_note_missing")
+    .eq("organization_id", membership.organization.id)
+    .maybeSingle();
+  const policy = company as {
+    checkout_due_required?: boolean;
+    default_checkout_days?: number;
+    require_note_broken?: boolean;
+    require_note_missing?: boolean;
+  } | null;
   return (
     <AssetScreen
       asset={asset}
@@ -57,6 +70,10 @@ export async function AssetView({
         notify: Boolean(status.notify),
       }))}
       fieldDefinitions={fieldDefinitions}
+      checkoutDueRequired={Boolean(policy?.checkout_due_required)}
+      defaultDue={defaultDueDate(todayInZone(membership.organization.timezone), Number(policy?.default_checkout_days ?? 0))}
+      requireNoteBroken={Boolean(policy?.require_note_broken)}
+      requireNoteMissing={Boolean(policy?.require_note_missing)}
     />
   );
 }

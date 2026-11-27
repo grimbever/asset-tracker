@@ -1,7 +1,8 @@
 import { daysUntil } from "@/lib/assets/attention";
+import { DEFAULT_UPCOMING_DAYS } from "@/lib/company/matrix";
 import { renewalAttentionDate } from "@/lib/subscriptions/plan";
 
-export type UpcomingBucket = "overdue" | "7" | "30" | "90" | "180";
+export type UpcomingBucket = "overdue" | (string & {});
 
 export type UpcomingItem = {
   id: string;
@@ -21,14 +22,26 @@ export const UPCOMING_BUCKETS: { id: UpcomingBucket; label: string }[] = [
   { id: "180", label: "91–180 days" },
 ];
 
-/** Exclusive windows so a date appears in one group. Dates past 180 days are left off the list. */
-export function bucketForDays(days: number): UpcomingBucket | null {
+/** Exclusive windows so a date appears in one group. Dates past the last window are left off the list. */
+export function bucketForDays(days: number, edges: readonly number[] = DEFAULT_UPCOMING_DAYS): UpcomingBucket | null {
   if (days < 0) return "overdue";
-  if (days <= 7) return "7";
-  if (days <= 30) return "30";
-  if (days <= 90) return "90";
-  if (days <= 180) return "180";
+  for (const edge of edges) {
+    if (days <= edge) return String(edge);
+  }
   return null;
+}
+
+export function upcomingBuckets(edges: readonly number[] = DEFAULT_UPCOMING_DAYS): { id: string; label: string }[] {
+  const buckets = [{ id: "overdue", label: "Overdue" }];
+  let previous = 0;
+  for (const edge of edges) {
+    buckets.push({
+      id: String(edge),
+      label: previous === 0 ? `Next ${edge} days` : `${previous + 1}–${edge} days`,
+    });
+    previous = edge;
+  }
+  return buckets;
 }
 
 export function daysRemainingLabel(days: number): string {
@@ -75,12 +88,12 @@ type MaintenanceSource = {
 
 function pushDate(
   items: UpcomingItem[],
-  input: { id: string; href: string; who: string; what: string; dueOn: string | null; timeZone: string; now: Date },
+  input: { id: string; href: string; who: string; what: string; dueOn: string | null; timeZone: string; now: Date; edges: readonly number[] },
 ) {
   if (!input.dueOn) return;
   const days = daysUntil(input.dueOn, input.timeZone, input.now);
   if (days === null) return;
-  const bucket = bucketForDays(days);
+  const bucket = bucketForDays(days, input.edges);
   if (!bucket) return;
   items.push({
     id: input.id,
@@ -110,6 +123,7 @@ export function collectUpcoming(
   },
   timeZone: string,
   now: Date,
+  edges: readonly number[] = DEFAULT_UPCOMING_DAYS,
 ): UpcomingItem[] {
   const items: UpcomingItem[] = [];
   const dateFields = source.fields.filter(
@@ -127,6 +141,7 @@ export function collectUpcoming(
         dueOn: asset.due_on,
         timeZone,
         now,
+        edges,
       });
     }
     for (const field of dateFields) {
@@ -138,6 +153,7 @@ export function collectUpcoming(
         dueOn: asset.custom_fields[field.key] ?? null,
         timeZone,
         now,
+        edges,
       });
     }
   }
@@ -152,6 +168,7 @@ export function collectUpcoming(
       dueOn: person.termination_date,
       timeZone,
       now,
+      edges,
     });
   }
 
@@ -165,6 +182,7 @@ export function collectUpcoming(
       dueOn: renewalAttentionDate(subscription.renews_on, subscription.notice_days),
       timeZone,
       now,
+      edges,
     });
   }
 
@@ -178,14 +196,18 @@ export function collectUpcoming(
       dueOn: job.due_on,
       timeZone,
       now,
+      edges,
     });
   }
 
   return items.sort((a, b) => a.dueOn.localeCompare(b.dueOn) || a.who.localeCompare(b.who));
 }
 
-export function groupUpcoming(items: readonly UpcomingItem[]): Record<UpcomingBucket, UpcomingItem[]> {
-  const groups: Record<UpcomingBucket, UpcomingItem[]> = { overdue: [], "7": [], "30": [], "90": [], "180": [] };
-  for (const item of items) groups[item.bucket].push(item);
+export function groupUpcoming(items: readonly UpcomingItem[]): Record<string, UpcomingItem[]> {
+  const groups: Record<string, UpcomingItem[]> = { overdue: [], "7": [], "30": [], "90": [], "180": [] };
+  for (const item of items) {
+    if (!groups[item.bucket]) groups[item.bucket] = [];
+    groups[item.bucket].push(item);
+  }
   return groups;
 }

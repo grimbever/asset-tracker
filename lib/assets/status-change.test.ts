@@ -46,6 +46,9 @@ describe("change status", () => {
     expect(statusChangeBlocker({ next: "disposed", note: "", confirmed: true })).toMatch(/note/);
     expect(statusChangeBlocker({ next: "destroyed", note: "Crushed", confirmed: false })).toMatch(/Confirm/);
     expect(statusChangeBlocker({ next: "disposed", note: "Sold", confirmed: true })).toBeNull();
+    expect(statusChangeBlocker({ next: "broken", note: "", confirmed: false })).toBeNull();
+    expect(statusChangeBlocker({ next: "broken", note: "", confirmed: false, requireNoteBroken: true })).toMatch(/note/);
+    expect(statusChangeBlocker({ next: "missing", note: "Can't find it", confirmed: false, requireNoteMissing: true })).toBeNull();
     expect(statusSaveLabel("disposed")).toBe("Confirm disposed");
     expect(statusSaveLabel("destroyed")).toBe("Confirm destroyed");
     expect(statusSaveLabel("available")).toBe("Mark available");

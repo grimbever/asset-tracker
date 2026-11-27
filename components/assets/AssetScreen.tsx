@@ -11,6 +11,7 @@ import { fieldsFor } from "@/lib/assets/fields";
 import { deliverNotification } from "@/app/notify/actions";
 import type { AssetEvent } from "@/lib/assets/events";
 import { changeableStatuses, isEndOfLife, showReturnToService, statusChangeBlocker, statusSaveLabel, type StatusChoice } from "@/lib/assets/status-change";
+import { checkoutDueBlocker } from "@/lib/company/matrix";
 import { assetTypeLabel, type AssetRecord } from "@/lib/assets/types";
 import { APP_UPDATED_MESSAGE } from "@/lib/app-update";
 import { PHOTO_MAX_EDGE_PX } from "@/lib/config";
@@ -49,6 +50,10 @@ export function AssetScreen({
   names = EMPTY_HISTORY_NAMES,
   statuses = [],
   fieldDefinitions = [],
+  checkoutDueRequired = false,
+  defaultDue = "",
+  requireNoteBroken = false,
+  requireNoteMissing = false,
 }: {
   asset: AssetRecord;
   pieces: AssetRecord[];
@@ -66,13 +71,17 @@ export function AssetScreen({
   names?: HistoryNames;
   statuses?: { key: string; label: string; archived_at: string | null; position?: number; counts_as_available?: boolean; needs_attention?: boolean; notify?: boolean }[];
   fieldDefinitions?: { key: string; label: string; kind: string; type_key: string; archived_at: string | null }[];
+  checkoutDueRequired?: boolean;
+  defaultDue?: string;
+  requireNoteBroken?: boolean;
+  requireNoteMissing?: boolean;
 }) {
   const router = useRouter();
   const [panel, setPanel] = useState<"checkout" | "move" | "status" | "damage" | "delete" | null>(null);
   const [targetKind, setTargetKind] = useState<"person" | "location">("person");
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [locationId, setLocationId] = useState<string | null>(asset.location_id);
-  const [dueOn, setDueOn] = useState("");
+  const [dueOn, setDueOn] = useState(defaultDue);
   const [note, setNote] = useState("");
   const [nextStatus, setNextStatus] = useState("");
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -128,6 +137,11 @@ export function AssetScreen({
   }
 
   async function confirmCheckout() {
+    const dueBlock = checkoutDueBlocker(dueOn, checkoutDueRequired);
+    if (dueBlock) {
+      setError(dueBlock);
+      return;
+    }
     await run(async () => {
       const supabase = getBrowserSupabase();
       if (!supabase) return;
@@ -143,7 +157,7 @@ export function AssetScreen({
   }
 
   async function saveStatus(next: string, statusNote: string, confirmed: boolean) {
-    const blocker = statusChangeBlocker({ next, note: statusNote, confirmed });
+    const blocker = statusChangeBlocker({ next, note: statusNote, confirmed, requireNoteBroken, requireNoteMissing });
     if (blocker) {
       setMessage(null);
       setError(blocker);
@@ -306,8 +320,8 @@ export function AssetScreen({
               ))}
             </div>
           )}
-          <Field label="Due date, optional">
-            <TextInput type="date" value={dueOn} onChange={(event) => setDueOn(event.target.value)} />
+          <Field label={checkoutDueRequired ? "Due date" : "Due date, optional"}>
+            <TextInput type="date" required={checkoutDueRequired} value={dueOn} onChange={(event) => setDueOn(event.target.value)} />
           </Field>
           <Button disabled={pending} onClick={() => void confirmCheckout()}>
             Confirm check out

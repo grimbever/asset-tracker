@@ -2,9 +2,14 @@ export function shouldEmail(input: {
   eventType: string;
   statusKey?: string | null;
   statusNotify?: boolean;
+  notifyCheckout?: boolean;
+  notifyCheckin?: boolean;
+  notifyStatus?: boolean;
 }): boolean {
-  if (input.eventType === "checked_out" || input.eventType === "checked_in") return true;
+  if (input.eventType === "checked_out") return input.notifyCheckout !== false;
+  if (input.eventType === "checked_in") return input.notifyCheckin !== false;
   if (input.eventType !== "status_changed") return false;
+  if (input.notifyStatus === false) return false;
   return Boolean(input.statusNotify);
 }
 

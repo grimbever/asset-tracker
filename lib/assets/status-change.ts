@@ -24,10 +24,18 @@ export function showReturnToService(status: string): boolean {
   return !SERVICE_BLOCK.has(status);
 }
 
-export function statusChangeBlocker(input: { next: string; note: string; confirmed: boolean }): string | null {
+export function statusChangeBlocker(input: {
+  next: string;
+  note: string;
+  confirmed: boolean;
+  requireNoteBroken?: boolean;
+  requireNoteMissing?: boolean;
+}): string | null {
   if (!input.next) return "Choose a status.";
   if (input.next === "checked_out") return "Use check out to issue this item.";
   if (input.next === "retired") return "Retired is no longer used. Choose disposed or destroyed.";
+  if (input.next === "broken" && input.requireNoteBroken && !input.note.trim()) return "This status needs a note.";
+  if (input.next === "missing" && input.requireNoteMissing && !input.note.trim()) return "This status needs a note.";
   if (!isEndOfLife(input.next)) return null;
   if (!input.note.trim()) return "Disposed and destroyed need a note.";
   if (!input.confirmed) return "Confirm this end-of-life change.";

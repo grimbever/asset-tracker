@@ -11,12 +11,14 @@ import { DEFAULT_TEMPLATE_ID, LABEL_TEMPLATES } from "@/lib/labels/templates";
 export function LabelPicker({
   assets,
   locationNames,
+  initialTemplate = DEFAULT_TEMPLATE_ID,
 }: {
   assets: AssetRecord[];
   locationNames: Record<string, string>;
+  initialTemplate?: string;
 }) {
   const router = useRouter();
-  const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE_ID);
+  const [templateId, setTemplateId] = useState(initialTemplate);
   const [showType, setShowType] = useState(true);
   const [showLocation, setShowLocation] = useState(false);
   const [width, setWidth] = useState("2");
