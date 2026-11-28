@@ -12,6 +12,7 @@ const companySetup = readFileSync("supabase/migrations/20261130000000_company_se
 const performance = readFileSync("supabase/migrations/20261130120000_performance.sql", "utf8");
 const inventory = readFileSync("supabase/migrations/20261130140000_inventory_kiosk_warranty.sql", "utf8");
 const kioskRequests = readFileSync("supabase/migrations/20261130160000_kiosk_requests.sql", "utf8");
+const shoppingView = readFileSync("supabase/migrations/20261130180000_shopping_view.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
 const tables = [...migration.matchAll(/create table if not exists public\.(\w+)/g)].map((match) => match[1]);
@@ -59,6 +60,10 @@ describe("schema", () => {
     expect(kioskRequests).toContain("function public.submit_supply_request");
     expect(kioskRequests).toContain("kiosk.request");
     expect(setup.indexOf(inventory)).toBeLessThan(setup.indexOf(kioskRequests));
+    expect(setup).toContain(shoppingView);
+    expect(shoppingView).toContain("shopping.view");
+    expect(shoppingView).toContain("when 'shopping' then array['shopping.view']");
+    expect(setup.indexOf(kioskRequests)).toBeLessThan(setup.indexOf(shoppingView));
     expect(historyLinks).toContain("related_employee_id");
     expect(historyLinks).toContain("function public.search_events");
     expect(historyLinks).toContain("ilike");
