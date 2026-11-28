@@ -11,6 +11,7 @@ const companySetup = readFileSync("supabase/migrations/20261130000000_company_se
 const performance = readFileSync("supabase/migrations/20261130120000_performance.sql", "utf8");
 const inventory = readFileSync("supabase/migrations/20261130140000_inventory_kiosk_warranty.sql", "utf8");
 const kioskRequests = readFileSync("supabase/migrations/20261130160000_kiosk_requests.sql", "utf8");
+const shoppingView = readFileSync("supabase/migrations/20261130180000_shopping_view.sql", "utf8");
 const header = `-- Asset Tracker setup
 -- Paste this whole file into the Supabase SQL Editor once.
 -- Running it again is safe: it creates anything that is missing and does not erase equipment, people, or photos.
@@ -20,6 +21,6 @@ const header = `-- Asset Tracker setup
 
 writeFileSync(
   "supabase/setup.sql",
-  `${header}${init}\n-- Milestone 2\n${milestone2}\n-- History links\n${history}\n-- Invite email\n${inviteSent}\n-- Status change\n${statusChange}\n-- History labels\n${historyLabels}\n-- Subscriptions\n${subscriptions}\n-- Company setup\n${companySetup}\n-- Performance\n${performance}\n-- Inventory, kiosk, and warranty\n${inventory}\n-- Kiosk shopping list\n${kioskRequests}`,
+  `${header}${init}\n-- Milestone 2\n${milestone2}\n-- History links\n${history}\n-- Invite email\n${inviteSent}\n-- Status change\n${statusChange}\n-- History labels\n${historyLabels}\n-- Subscriptions\n${subscriptions}\n-- Company setup\n${companySetup}\n-- Performance\n${performance}\n-- Inventory, kiosk, and warranty\n${inventory}\n-- Kiosk shopping list\n${kioskRequests}\n-- Shopping list view\n${shoppingView}`,
 );
 console.log("wrote supabase/setup.sql");

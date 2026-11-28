@@ -120,6 +120,15 @@ export const ACCESS_MODULES: readonly AccessModule[] = [
     enabled: true,
   },
   {
+    id: "shopping",
+    label: "Shopping list",
+    hint: "See requests from the kiosk. Updating a request still needs inventory edit or manage.",
+    levels: ["none", "view"],
+    universe: [PERMISSIONS.shoppingView],
+    grants: { none: [], view: [PERMISSIONS.shoppingView] },
+    enabled: true,
+  },
+  {
     id: "settings",
     label: "Settings and lookups",
     hint: "Company setup, statuses, types, and custom fields.",

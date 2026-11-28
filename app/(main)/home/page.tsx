@@ -13,6 +13,7 @@ import { statusCards } from "@/lib/lookups";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { listConsumables } from "@/lib/inventory/data";
+import { canSeeShoppingList, shoppingCounts, shoppingListHref } from "@/lib/inventory/shopping";
 import { isLowStock } from "@/lib/inventory/stock";
 import { listSubscriptions } from "@/lib/subscriptions/data";
 import { DEFAULT_UPCOMING_DAYS } from "@/lib/company/matrix";
@@ -28,7 +29,8 @@ export default async function DashboardPage() {
   const canView = can(active.permissions, PERMISSIONS.assetsView);
   const canSeeSubscriptions = can(active.permissions, PERMISSIONS.subscriptionsView) || can(active.permissions, PERMISSIONS.subscriptionsManage);
   const canSeeInventory = can(active.permissions, PERMISSIONS.inventoryView) || can(active.permissions, PERMISSIONS.inventoryEdit) || can(active.permissions, PERMISSIONS.inventoryManage);
-  const [assets, people, fields, maintenance, statuses, subscriptions, consumables, settingsRow] = await Promise.all([
+  const canSeeShopping = canSeeShoppingList(active.permissions);
+  const [assets, people, fields, maintenance, statuses, subscriptions, consumables, requestRows, settingsRow] = await Promise.all([
     canView ? listAssets(supabase, active.organization.id, { includeArchived: true }) : Promise.resolve([]),
     canView ? listEmployees(supabase, active.organization.id) : Promise.resolve([]),
     canView ? listFieldDefinitions(supabase, active.organization.id) : Promise.resolve([]),
@@ -38,6 +40,9 @@ export default async function DashboardPage() {
       ? listSubscriptions(supabase, active.organization.id, false).catch(() => [])
       : Promise.resolve([]),
     canSeeInventory ? listConsumables(supabase, active.organization.id).catch(() => []) : Promise.resolve([]),
+    canSeeShopping
+      ? supabase.from("supply_requests").select("status").eq("organization_id", active.organization.id).in("status", ["open", "ordered"])
+      : Promise.resolve({ data: [] as { status: string }[] }),
     supabase.from("organization_settings").select("upcoming_days").eq("organization_id", active.organization.id).maybeSingle(),
   ]);
   let upcomingEdges: number[] = [...DEFAULT_UPCOMING_DAYS];
@@ -68,6 +73,21 @@ export default async function DashboardPage() {
     upcomingEdges,
   );
   const lowStock = consumables.filter((item) => item.active && !item.archived_at && isLowStock(item.quantity_on_hand, item.minimum_quantity)).length;
+  const cardClass =
+    "block min-h-24 rounded-3xl bg-card p-4 outline-offset-2 transition hover:bg-paper-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-green";
+  const shopping = shoppingCounts((requestRows.data ?? []) as { status: string }[]);
+  const shoppingCards = canSeeShopping ? (
+    <>
+      <Link href={shoppingListHref("open")} className={cardClass} aria-label={`Shopping list, not ordered, ${shopping.open}`}>
+        <p className="text-sm text-muted">Shopping list - Not ordered</p>
+        <p className="font-serif text-3xl">{shopping.open}</p>
+      </Link>
+      <Link href={shoppingListHref("ordered")} className={cardClass} aria-label={`Shopping list, on order, ${shopping.ordered}`}>
+        <p className="text-sm text-muted">Shopping list - On order</p>
+        <p className="font-serif text-3xl">{shopping.ordered}</p>
+      </Link>
+    </>
+  ) : null;
   const cards = statusCards(
     statuses.map((status) => ({
       key: status.key,
@@ -79,8 +99,6 @@ export default async function DashboardPage() {
     assets.map((asset) => ({ status: asset.status, archivedAt: asset.archived_at })),
   );
   const listedAssets = assets.filter((asset) => !asset.archived_at).length;
-  const cardClass =
-    "block min-h-24 rounded-3xl bg-card p-4 outline-offset-2 transition hover:bg-paper-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-green";
 
   return (
     <main className="mx-auto grid max-w-5xl gap-6 px-4 py-6">
@@ -103,6 +121,7 @@ export default async function DashboardPage() {
                 <p className="font-serif text-3xl">{lowStock}</p>
               </Link>
             ) : null}
+            {shoppingCards}
             {cards.map((card) => (
               <Link key={card.key} href={assetsHref({ status: card.key })} className={cardClass} aria-label={`${card.label}, ${card.count}`}>
                 <p className="text-sm text-muted">{card.label}</p>
@@ -123,6 +142,7 @@ export default async function DashboardPage() {
             Open the scanner
           </Link>
           {canSeeInventory ? <Link href="/inventory?low=1" className="mt-3 block text-sm underline">Low stock: {lowStock}</Link> : null}
+          {canSeeShopping ? <div className="mt-4 grid grid-cols-2 gap-3">{shoppingCards}</div> : null}
         </section>
       )}
     </main>
