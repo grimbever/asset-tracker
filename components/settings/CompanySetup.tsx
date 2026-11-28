@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ReminderSettings } from "@/components/subscriptions/ReminderSettings";
+import { WarrantyAlertSettings } from "@/components/settings/WarrantyAlertSettings";
 import { Banner, Button, Field, TextInput } from "@/components/ui";
 import type { CompanyForm, CompanyRole } from "@/lib/company/data";
 import { copyRole, saveCompanySettings, saveRoleActive, saveRoleModule, saveRoleName } from "@/lib/company/data";
@@ -160,6 +161,7 @@ export function CompanySetup({
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.notifyCheckin} onChange={(event) => patch("notifyCheckin", event.target.checked)} /> Email on check in</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.notifyStatus} onChange={(event) => patch("notifyStatus", event.target.checked)} /> Email on flagged status changes</label>
         <ReminderSettings organizationId={organizationId} days={reminderDays} />
+        <WarrantyAlertSettings organizationId={organizationId} />
       </section>
 
       <section className="grid gap-3">
@@ -206,7 +208,7 @@ export function CompanySetup({
                   <TextInput defaultValue={role.description} id={`role-description-${role.id}`} />
                 </Field>
               </div>
-              <p className="text-xs text-muted">Key {role.key}{role.active ? "" : " · off"}{role.key === "kiosk" ? " · not assigned to a person" : ""}</p>
+              <p className="text-xs text-muted">Key {role.key}{role.active ? "" : " · off"}{role.key === "kiosk" ? " · sign the tablet in with this role" : ""}</p>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="ghost" disabled={pending} onClick={() => {
                   const name = (document.getElementById(`role-name-${role.id}`) as HTMLInputElement | null)?.value ?? role.name;

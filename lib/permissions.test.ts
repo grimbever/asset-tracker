@@ -19,10 +19,12 @@ describe("role matrix", () => {
     expect(auditor?.permissions).toContain(PERMISSIONS.exportsFull);
   });
 
-  it("does not assign the kiosk role to a person", () => {
+  it("lets a tablet account use the kiosk role", () => {
     const kiosk = ROLE_SEEDS.find((role) => role.key === "kiosk");
-    expect(kiosk).toMatchObject({ active: true, assignable: false });
-    expect(kiosk?.permissions).toContain(PERMISSIONS.stockTake);
+    expect(kiosk).toMatchObject({ active: true, assignable: true });
+    expect(kiosk?.permissions).toContain(PERMISSIONS.kioskUse);
+    expect(kiosk?.permissions).toContain(PERMISSIONS.inventoryView);
+    expect(kiosk?.permissions).toContain(PERMISSIONS.assetsCheckout);
     expect(kiosk?.permissions).not.toContain(PERMISSIONS.assetsView);
   });
 

@@ -165,6 +165,10 @@ export function parseAsset(value: unknown): AssetRecord {
     checkout_as_unit: row.checkout_as_unit === true,
     custom_fields: customFields,
     archived_at: str(row.archived_at),
+    warranty_start: str(row.warranty_start),
+    warranty_end: str(row.warranty_end),
+    warranty_provider: str(row.warranty_provider),
+    warranty_notes: str(row.warranty_notes),
     created_at: requiredString(row.created_at, "created_at"),
     updated_at: requiredString(row.updated_at, "updated_at"),
   };

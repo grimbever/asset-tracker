@@ -57,7 +57,8 @@ describe("company permission matrix", () => {
   });
 
   it("refuses a disabled module", () => {
-    expect(() => applyLevel([], kiosk, "manage")).toThrow(/not available/);
+    expect(applyLevel([], kiosk, "use")).toContain(PERMISSIONS.kioskUse);
+    expect(() => applyLevel([], moduleById("work_orders")!, "edit")).toThrow(/not available/);
   });
 
   it("uses the new permission once the database has it, and the old rule until then", () => {
@@ -172,7 +173,8 @@ describe("company setting rules", () => {
 
 describe("module list", () => {
   it("keeps future modules visible but disabled", () => {
-    expect(ACCESS_MODULES.find((module) => module.id === "kiosk")?.enabled).toBe(false);
+    expect(ACCESS_MODULES.find((module) => module.id === "kiosk")?.enabled).toBe(true);
+    expect(ACCESS_MODULES.find((module) => module.id === "inventory")?.enabled).toBe(true);
     expect(ACCESS_MODULES.find((module) => module.id === "work_orders")?.enabled).toBe(false);
     expect(ACCESS_MODULES.filter((module) => module.enabled).length).toBeGreaterThan(8);
   });

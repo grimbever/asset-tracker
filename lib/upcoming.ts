@@ -59,6 +59,7 @@ type AssetSource = {
   status: string;
   due_on: string | null;
   archived_at: string | null;
+  warranty_end?: string | null;
   custom_fields: Record<string, string>;
 };
 
@@ -144,6 +145,16 @@ export function collectUpcoming(
         edges,
       });
     }
+    pushDate(items, {
+      id: `warranty-${asset.id}`,
+      href: `/assets/${asset.id}`,
+      who: asset.name,
+      what: "Warranty ends",
+      dueOn: asset.warranty_end ?? null,
+      timeZone,
+      now,
+      edges,
+    });
     for (const field of dateFields) {
       pushDate(items, {
         id: `field-${asset.id}-${field.key}`,

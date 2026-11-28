@@ -12,6 +12,8 @@ import { assetsHref } from "@/lib/assets/filter";
 import { statusCards } from "@/lib/lookups";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { PERMISSIONS, can } from "@/lib/permissions";
+import { listConsumables } from "@/lib/inventory/data";
+import { isLowStock } from "@/lib/inventory/stock";
 import { listSubscriptions } from "@/lib/subscriptions/data";
 import { DEFAULT_UPCOMING_DAYS } from "@/lib/company/matrix";
 import { collectUpcoming } from "@/lib/upcoming";
@@ -25,7 +27,8 @@ export default async function DashboardPage() {
   if (!supabase) return null;
   const canView = can(active.permissions, PERMISSIONS.assetsView);
   const canSeeSubscriptions = can(active.permissions, PERMISSIONS.subscriptionsView) || can(active.permissions, PERMISSIONS.subscriptionsManage);
-  const [assets, people, fields, maintenance, statuses, subscriptions, settingsRow] = await Promise.all([
+  const canSeeInventory = can(active.permissions, PERMISSIONS.inventoryView) || can(active.permissions, PERMISSIONS.inventoryEdit) || can(active.permissions, PERMISSIONS.inventoryManage);
+  const [assets, people, fields, maintenance, statuses, subscriptions, consumables, settingsRow] = await Promise.all([
     canView ? listAssets(supabase, active.organization.id, { includeArchived: true }) : Promise.resolve([]),
     canView ? listEmployees(supabase, active.organization.id) : Promise.resolve([]),
     canView ? listFieldDefinitions(supabase, active.organization.id) : Promise.resolve([]),
@@ -34,6 +37,7 @@ export default async function DashboardPage() {
     canSeeSubscriptions
       ? listSubscriptions(supabase, active.organization.id, false).catch(() => [])
       : Promise.resolve([]),
+    canSeeInventory ? listConsumables(supabase, active.organization.id).catch(() => []) : Promise.resolve([]),
     supabase.from("organization_settings").select("upcoming_days").eq("organization_id", active.organization.id).maybeSingle(),
   ]);
   let upcomingEdges: number[] = [...DEFAULT_UPCOMING_DAYS];
@@ -63,6 +67,7 @@ export default async function DashboardPage() {
     new Date(),
     upcomingEdges,
   );
+  const lowStock = consumables.filter((item) => item.active && !item.archived_at && isLowStock(item.quantity_on_hand, item.minimum_quantity)).length;
   const cards = statusCards(
     statuses.map((status) => ({
       key: status.key,
@@ -92,6 +97,12 @@ export default async function DashboardPage() {
               <p className="text-sm text-muted">Assets</p>
               <p className="font-serif text-3xl">{listedAssets}</p>
             </Link>
+            {canSeeInventory ? (
+              <Link href="/inventory?low=1" className={cardClass} aria-label={`Low stock, ${lowStock}`}>
+                <p className="text-sm text-muted">Low stock</p>
+                <p className="font-serif text-3xl">{lowStock}</p>
+              </Link>
+            ) : null}
             {cards.map((card) => (
               <Link key={card.key} href={assetsHref({ status: card.key })} className={cardClass} aria-label={`${card.label}, ${card.count}`}>
                 <p className="text-sm text-muted">{card.label}</p>
@@ -111,6 +122,7 @@ export default async function DashboardPage() {
           <Link href="/scan" className="mt-4 inline-flex min-h-12 items-center rounded-full bg-ember px-4 text-white">
             Open the scanner
           </Link>
+          {canSeeInventory ? <Link href="/inventory?low=1" className="mt-3 block text-sm underline">Low stock: {lowStock}</Link> : null}
         </section>
       )}
     </main>

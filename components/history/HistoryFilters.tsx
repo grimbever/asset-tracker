@@ -15,6 +15,7 @@ const recordOptions = [
   ["custom_field", "Custom field"],
   ["invite", "Invite"],
   ["subscription", "Subscription"],
+  ["consumable", "Inventory"],
   ["organization", "Company"],
   ["role", "Role"],
 ] as const;

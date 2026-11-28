@@ -21,6 +21,8 @@ export function AssetList({
   personId = null,
   locationId = null,
   statusKey = null,
+  warrantySoon = false,
+  today = "",
 }: {
   assets: AssetRecord[];
   locationNames: Record<string, string>;
@@ -31,6 +33,8 @@ export function AssetList({
   personId?: string | null;
   locationId?: string | null;
   statusKey?: string | null;
+  warrantySoon?: boolean;
+  today?: string;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -39,8 +43,8 @@ export function AssetList({
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   const filtered = useMemo(
-    () => filterAssets(assets, { query, status, showArchived, personId, locationId, locationNames }),
-    [assets, locationId, locationNames, personId, query, showArchived, status],
+    () => filterAssets(assets, { query, status, showArchived, personId, locationId, locationNames, warrantySoon, today }),
+    [assets, locationId, locationNames, personId, query, showArchived, status, warrantySoon, today],
   );
 
   function openExact(raw: string) {
@@ -68,27 +72,34 @@ export function AssetList({
           </Link>
         ) : null}
       </div>
-      {personId || locationId || status !== "all" ? (
+      {personId || locationId || status !== "all" || warrantySoon ? (
         <div className="flex flex-wrap gap-2">
           {status !== "all" ? (
-            <Link href={assetsHref({ personId, locationId })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+            <Link href={assetsHref({ personId, locationId, warranty: warrantySoon })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
               {statusLabels[status] ?? status}
               <span aria-hidden="true">×</span>
               <span className="sr-only">Remove status filter</span>
             </Link>
           ) : null}
           {personId ? (
-            <Link href={assetsHref({ locationId, status })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+            <Link href={assetsHref({ locationId, status, warranty: warrantySoon })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
               Assigned to {assigneeNames[personId] ?? "this person"}
               <span aria-hidden="true">×</span>
               <span className="sr-only">Remove person filter</span>
             </Link>
           ) : null}
           {locationId ? (
-            <Link href={assetsHref({ personId, status })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+            <Link href={assetsHref({ personId, status, warranty: warrantySoon })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
               At {locationNames[locationId] ?? "this location"}
               <span aria-hidden="true">×</span>
               <span className="sr-only">Remove location filter</span>
+            </Link>
+          ) : null}
+          {warrantySoon ? (
+            <Link href={assetsHref({ personId, locationId, status })} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-3 text-sm text-paper">
+              Warranty expiring
+              <span aria-hidden="true">×</span>
+              <span className="sr-only">Remove warranty filter</span>
             </Link>
           ) : null}
         </div>
@@ -101,7 +112,7 @@ export function AssetList({
             className={`rounded-full px-3 py-1 text-sm ${status === value ? "bg-ink text-paper" : "bg-card"}`}
             onClick={() => {
               setStatus(value);
-              router.push(assetsHref({ personId, locationId, status: value === "all" ? null : value }));
+              router.push(assetsHref({ personId, locationId, warranty: warrantySoon, status: value === "all" ? null : value }));
             }}
           >
             {value === "all" ? "All" : statusLabels[value] ?? value}

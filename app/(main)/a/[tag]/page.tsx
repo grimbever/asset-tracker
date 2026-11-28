@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AssetView } from "@/components/assets/AssetView";
 import { lookupAssetsByTag } from "@/lib/data";
 import { loadWorkspace } from "@/lib/data/workspace";
@@ -11,8 +11,15 @@ export default async function TagPage({ params }: { params: Promise<{ tag: strin
   if (!workspace) notFound();
   const supabase = await createSupabaseServerClient();
   if (!supabase) notFound();
-  const matches = await lookupAssetsByTag(supabase, decodeURIComponent(tag));
+  const code = decodeURIComponent(tag);
+  const matches = await lookupAssetsByTag(supabase, code);
   if (matches.length === 0) {
+    const [byBin, bySku] = await Promise.all([
+      supabase.from("consumables").select("id").eq("bin_code", code).limit(1),
+      supabase.from("consumables").select("id").eq("sku", code).limit(1),
+    ]);
+    const binId = (byBin.data?.[0] as { id: string } | undefined)?.id ?? (bySku.data?.[0] as { id: string } | undefined)?.id;
+    if (binId) redirect(`/inventory/${binId}`);
     return (
       <main className="mx-auto max-w-xl px-4 py-10">
         <h1 className="font-serif text-4xl">No asset for this tag</h1>

@@ -12,6 +12,8 @@ import { PERMISSIONS, can } from "@/lib/permissions";
 const links = [
   { href: "/home", label: "Home", show: () => true },
   { href: "/assets", label: "Assets", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
+  { href: "/inventory", label: "Inventory", show: (permissions: string[]) => can(permissions, PERMISSIONS.inventoryView) || can(permissions, PERMISSIONS.inventoryEdit) || can(permissions, PERMISSIONS.inventoryManage) },
+  { href: "/kiosk", label: "Kiosk", show: (permissions: string[]) => can(permissions, PERMISSIONS.kioskUse) || can(permissions, PERMISSIONS.kioskManage) },
   { href: "/scan", label: "Scan", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsScan) },
   { href: "/labels", label: "Labels", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
   { href: "/people", label: "People", show: (permissions: string[]) => can(permissions, PERMISSIONS.peopleView) || can(permissions, PERMISSIONS.peopleManage) || can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
