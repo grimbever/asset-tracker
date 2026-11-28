@@ -160,6 +160,17 @@ export async function saveRoleActive(supabase: Client, organizationId: string, r
   if (error) throw new Error(messageFrom(error));
 }
 
+export async function saveRoleExtra(supabase: Client, organizationId: string, roleId: string, permission: string, enabled: boolean) {
+  const { error } = await supabase.rpc("set_role_extra_permission", {
+    p_organization_id: organizationId,
+    p_role_id: roleId,
+    p_event_id: newId(),
+    p_permission: permission,
+    p_enabled: enabled,
+  });
+  if (error) throw new Error(messageFrom(error));
+}
+
 export async function copyRole(supabase: Client, organizationId: string, sourceId: string, name: string) {
   const { error } = await supabase.rpc("clone_role", {
     p_organization_id: organizationId,

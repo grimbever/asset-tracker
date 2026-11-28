@@ -140,7 +140,7 @@ export const ACCESS_MODULES: readonly AccessModule[] = [
   {
     id: "kiosk",
     label: "Kiosk",
-    hint: "The storeroom tablet. Use can record what people take. Manage can set PINs.",
+    hint: "The storeroom tablet. Use can record what people take. Manage can set PINs. Request and create-item switches sit under each role and start off for a new organization.",
     levels: ["none", "use", "manage"],
     universe: [PERMISSIONS.kioskUse, PERMISSIONS.kioskManage],
     grants: {

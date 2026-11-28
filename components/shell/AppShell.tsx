@@ -13,6 +13,7 @@ const links = [
   { href: "/home", label: "Home", show: () => true },
   { href: "/assets", label: "Assets", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
   { href: "/inventory", label: "Inventory", show: (permissions: string[]) => can(permissions, PERMISSIONS.inventoryView) || can(permissions, PERMISSIONS.inventoryEdit) || can(permissions, PERMISSIONS.inventoryManage) },
+  { href: "/inventory/requests", label: "Shopping list", show: (permissions: string[]) => can(permissions, PERMISSIONS.inventoryEdit) || can(permissions, PERMISSIONS.inventoryManage) },
   { href: "/kiosk", label: "Kiosk", show: (permissions: string[]) => can(permissions, PERMISSIONS.kioskUse) || can(permissions, PERMISSIONS.kioskManage) },
   { href: "/scan", label: "Scan", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsScan) },
   { href: "/labels", label: "Labels", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },

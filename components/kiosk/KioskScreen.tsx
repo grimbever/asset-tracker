@@ -8,6 +8,8 @@ import { checkoutAsset } from "@/lib/data";
 import { messageFrom } from "@/lib/data/errors";
 import { newId } from "@/lib/ids";
 import { deliverLowStockAlert } from "@/app/notify/low-stock";
+import { deliverSupplyRequestAlert } from "@/app/notify/supply-request";
+import { takeQuantity } from "@/lib/kiosk/take";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 const IDLE_MS = 60_000;
@@ -17,16 +19,28 @@ export function KioskScreen({
   items,
   assets,
   canSetPin,
+  canRequest,
+  canCreateItem,
+  organizationId,
 }: {
   people: { id: string; name: string; hasPin: boolean }[];
   items: Consumable[];
   assets: AssetRecord[];
   canSetPin: boolean;
+  canRequest: boolean;
+  canCreateItem: boolean;
+  organizationId: string;
 }) {
+  const [stockItems, setStockItems] = useState(items);
+  const [toolItems, setToolItems] = useState(assets);
   const [personId, setPersonId] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [mode, setMode] = useState<"stock" | "tools" | "pin">("stock");
+  const [mode, setMode] = useState<"stock" | "tools" | "request">("stock");
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [requestName, setRequestName] = useState("");
+  const [requestQty, setRequestQty] = useState("1");
+  const [requestNote, setRequestNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -68,7 +82,13 @@ export function KioskScreen({
     setPin("");
   }
 
-  async function take(item: Consumable) {
+  async function take(item: Consumable, rawQuantity: string) {
+    const parsed = takeQuantity(rawQuantity, item.quantity_on_hand);
+    if (!parsed.ok) {
+      setError(parsed.error);
+      setMessage(null);
+      return;
+    }
     const supabase = getBrowserSupabase();
     if (!supabase || !sessionId) return;
     setError(null);
@@ -76,17 +96,20 @@ export function KioskScreen({
       p_session: sessionId,
       p_event_id: newId(),
       p_consumable_id: item.id,
-      p_quantity: 1,
+      p_quantity: parsed.quantity,
     });
     if (rpcError) {
       setError(messageFrom(rpcError));
       return;
     }
-    const result = (data ?? {}) as { crossed?: boolean; name?: string; organization_id?: string };
+    const result = (data ?? {}) as { crossed?: boolean; name?: string; organization_id?: string; quantity?: number };
+    const nextQuantity = Number(result.quantity ?? item.quantity_on_hand - parsed.quantity);
+    setStockItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, quantity_on_hand: nextQuantity } : entry)));
+    setAmounts((current) => ({ ...current, [item.id]: "" }));
     if (result.crossed && result.organization_id) {
       await deliverLowStockAlert({ organizationId: result.organization_id, name: result.name ?? item.name });
     }
-    setMessage(`Took 1 ${item.name}.`);
+    setMessage(`Took ${parsed.quantity} ${item.name}. ${nextQuantity} left.`);
   }
 
   async function checkOut(asset: AssetRecord) {
@@ -95,6 +118,7 @@ export function KioskScreen({
     setError(null);
     try {
       await checkoutAsset(supabase, asset, [], { employeeId: personId, locationId: null, dueOn: null });
+      setToolItems((current) => current.map((entry) => (entry.id === asset.id ? { ...entry, status: "checked_out" } : entry)));
       setMessage(`Checked out ${asset.name}.`);
     } catch (caught) {
       setError(messageFrom(caught));
@@ -113,9 +137,63 @@ export function KioskScreen({
     setMessage("PIN saved.");
   }
 
+  async function sendRequest() {
+    const parsed = takeQuantity(requestQty, Number.MAX_SAFE_INTEGER);
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+    const supabase = getBrowserSupabase();
+    if (!supabase || !sessionId) return;
+    setError(null);
+    const id = newId();
+    const { error: rpcError } = await supabase.rpc("submit_supply_request", {
+      p_id: id,
+      p_event_id: newId(),
+      p_session: sessionId,
+      p_name: requestName,
+      p_quantity: parsed.quantity,
+      p_note: requestNote,
+      p_photo_path: "",
+    });
+    if (rpcError) {
+      setError(messageFrom(rpcError));
+      return;
+    }
+    await deliverSupplyRequestAlert({ organizationId, name: requestName, quantity: parsed.quantity, who: person?.name ?? "" });
+    setRequestName("");
+    setRequestQty("1");
+    setRequestNote("");
+    setMessage("Added to the shopping list.");
+  }
+
+  async function createItem() {
+    const supabase = getBrowserSupabase();
+    if (!supabase) return;
+    if (!requestName.trim()) {
+      setError("Enter the item name.");
+      return;
+    }
+    setError(null);
+    const { error: rpcError } = await supabase.rpc("create_kiosk_item", {
+      p_id: newId(),
+      p_event_id: newId(),
+      p_organization_id: organizationId,
+      p_name: requestName.trim(),
+      p_note: requestNote,
+    });
+    if (rpcError) {
+      setError(messageFrom(rpcError));
+      return;
+    }
+    setRequestName("");
+    setRequestNote("");
+    setMessage("Item added to inventory. Refresh the kiosk to take it.");
+  }
+
   const needle = query.trim().toLowerCase();
-  const stock = items.filter((item) => !item.archived_at && item.active && (!needle || item.name.toLowerCase().includes(needle) || item.bin_code?.toLowerCase() === needle || item.sku?.toLowerCase() === needle));
-  const tools = assets.filter((asset) => !asset.archived_at && asset.status === "available" && (!needle || asset.name.toLowerCase().includes(needle) || asset.tag_id.toLowerCase() === needle));
+  const stock = stockItems.filter((item) => !item.archived_at && item.active && (!needle || item.name.toLowerCase().includes(needle) || item.bin_code?.toLowerCase() === needle || item.sku?.toLowerCase() === needle));
+  const tools = toolItems.filter((asset) => !asset.archived_at && asset.status === "available" && (!needle || asset.name.toLowerCase().includes(needle) || asset.tag_id.toLowerCase() === needle));
 
   if (!sessionId) {
     return (
@@ -169,15 +247,27 @@ export function KioskScreen({
       <div className="flex gap-2">
         <button type="button" className={`min-h-12 flex-1 rounded-full ${mode === "stock" ? "bg-ink text-paper" : "bg-card"}`} onClick={() => setMode("stock")}>Supplies</button>
         <button type="button" className={`min-h-12 flex-1 rounded-full ${mode === "tools" ? "bg-ink text-paper" : "bg-card"}`} onClick={() => setMode("tools")}>Tools</button>
+        {canRequest ? <button type="button" className={`min-h-12 flex-1 rounded-full ${mode === "request" ? "bg-ink text-paper" : "bg-card"}`} onClick={() => setMode("request")}>Request</button> : null}
       </div>
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search or scan a code" className="min-h-14 rounded-2xl border border-line bg-card px-4 text-lg" aria-label="Find an item" />
       <ul className="grid gap-3">
         {(mode === "stock" ? stock : []).map((item) => (
           <li key={item.id}>
-            <button type="button" className="flex min-h-20 w-full items-center justify-between rounded-3xl bg-card px-4 text-left text-lg" onClick={() => void take(item)}>
-              <span>{item.name}<span className="mt-1 block text-sm text-muted">{item.quantity_on_hand} on hand</span></span>
-              <span>Take 1</span>
-            </button>
+            <div className="grid gap-2 rounded-3xl bg-card px-4 py-3">
+              <span className="text-lg">{item.name}<span className="mt-1 block text-sm text-muted">{item.quantity_on_hand} on hand</span></span>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="min-h-12 rounded-full bg-ink px-4 text-paper" onClick={() => void take(item, "1")}>Take 1</button>
+                <input
+                  value={amounts[item.id] ?? ""}
+                  onChange={(event) => setAmounts((current) => ({ ...current, [item.id]: event.target.value.replace(/\D/g, "") }))}
+                  inputMode="numeric"
+                  aria-label={`Quantity of ${item.name}`}
+                  placeholder="Qty"
+                  className="min-h-12 w-24 rounded-2xl border border-line bg-paper px-3"
+                />
+                <button type="button" className="min-h-12 rounded-full bg-card px-4" onClick={() => void take(item, amounts[item.id] ?? "")}>Take</button>
+              </div>
+            </div>
           </li>
         ))}
         {(mode === "tools" ? tools : []).map((asset) => (
@@ -189,6 +279,16 @@ export function KioskScreen({
           </li>
         ))}
       </ul>
+      {mode === "request" && canRequest ? (
+        <form className="grid gap-3 rounded-3xl bg-card p-4" onSubmit={(event) => { event.preventDefault(); void sendRequest(); }}>
+          <h2 className="font-serif text-2xl">Shopping list</h2>
+          <input value={requestName} onChange={(event) => setRequestName(event.target.value)} placeholder="Item name" aria-label="Item name" className="min-h-12 rounded-2xl border border-line bg-paper px-3" />
+          <input value={requestQty} onChange={(event) => setRequestQty(event.target.value.replace(/\D/g, ""))} inputMode="numeric" aria-label="Quantity wanted" placeholder="Quantity" className="min-h-12 rounded-2xl border border-line bg-paper px-3" />
+          <input value={requestNote} onChange={(event) => setRequestNote(event.target.value)} placeholder="Note, optional" aria-label="Note" className="min-h-12 rounded-2xl border border-line bg-paper px-3" />
+          <Button type="submit">Add to shopping list</Button>
+          {canCreateItem ? <Button type="button" variant="ghost" onClick={() => void createItem()}>Create this item in inventory</Button> : null}
+        </form>
+      ) : null}
     </div>
   );
 }
