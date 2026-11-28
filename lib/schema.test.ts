@@ -11,6 +11,7 @@ const subscriptions = readFileSync("supabase/migrations/20261129000000_subscript
 const companySetup = readFileSync("supabase/migrations/20261130000000_company_setup.sql", "utf8");
 const performance = readFileSync("supabase/migrations/20261130120000_performance.sql", "utf8");
 const inventory = readFileSync("supabase/migrations/20261130140000_inventory_kiosk_warranty.sql", "utf8");
+const kioskRequests = readFileSync("supabase/migrations/20261130160000_kiosk_requests.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
 const tables = [...migration.matchAll(/create table if not exists public\.(\w+)/g)].map((match) => match[1]);
@@ -54,6 +55,10 @@ describe("schema", () => {
     expect(inventory).toContain("function public.claim_warranty_reminders");
     expect(inventory).toContain("kiosk.use");
     expect(setup.indexOf(performance)).toBeLessThan(setup.indexOf(inventory));
+    expect(setup).toContain(kioskRequests);
+    expect(kioskRequests).toContain("function public.submit_supply_request");
+    expect(kioskRequests).toContain("kiosk.request");
+    expect(setup.indexOf(inventory)).toBeLessThan(setup.indexOf(kioskRequests));
     expect(historyLinks).toContain("related_employee_id");
     expect(historyLinks).toContain("function public.search_events");
     expect(historyLinks).toContain("ilike");

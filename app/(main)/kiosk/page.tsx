@@ -28,6 +28,9 @@ export default async function KioskPage() {
         items={items}
         assets={assets}
         canSetPin={can(active.permissions, PERMISSIONS.kioskManage) || can(active.permissions, PERMISSIONS.peopleManage)}
+        canRequest={can(active.permissions, PERMISSIONS.kioskRequest)}
+        canCreateItem={can(active.permissions, PERMISSIONS.kioskCreateItem)}
+        organizationId={active.organization.id}
       />
     </main>
   );

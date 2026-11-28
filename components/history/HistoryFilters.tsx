@@ -16,6 +16,7 @@ const recordOptions = [
   ["invite", "Invite"],
   ["subscription", "Subscription"],
   ["consumable", "Inventory"],
+  ["supply_request", "Shopping list"],
   ["organization", "Company"],
   ["role", "Role"],
 ] as const;

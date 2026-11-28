@@ -6,7 +6,8 @@ import { ReminderSettings } from "@/components/subscriptions/ReminderSettings";
 import { WarrantyAlertSettings } from "@/components/settings/WarrantyAlertSettings";
 import { Banner, Button, Field, TextInput } from "@/components/ui";
 import type { CompanyForm, CompanyRole } from "@/lib/company/data";
-import { copyRole, saveCompanySettings, saveRoleActive, saveRoleModule, saveRoleName } from "@/lib/company/data";
+import { copyRole, saveCompanySettings, saveRoleActive, saveRoleExtra, saveRoleModule, saveRoleName } from "@/lib/company/data";
+import { PERMISSIONS } from "@/lib/permissions";
 import {
   ACCESS_MODULES,
   DATE_FORMATS,
@@ -293,6 +294,26 @@ export function CompanySetup({
                             <option key={choice} value={choice}>{levelLabel(choice)}</option>
                           ))}
                         </select>
+                        {module.id === "kiosk" ? (
+                          <div className="mt-2 grid gap-1 text-xs">
+                            <label className="flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={role.permissions.includes(PERMISSIONS.kioskRequest)}
+                                onChange={(event) => void run((supabase) => saveRoleExtra(supabase, organizationId, role.id, PERMISSIONS.kioskRequest, event.target.checked))}
+                              />
+                              Can request items
+                            </label>
+                            <label className="flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={role.permissions.includes(PERMISSIONS.kioskCreateItem)}
+                                onChange={(event) => void run((supabase) => saveRoleExtra(supabase, organizationId, role.id, PERMISSIONS.kioskCreateItem, event.target.checked))}
+                              />
+                              Can create items
+                            </label>
+                          </div>
+                        ) : null}
                       </td>
                     );
                   })}
