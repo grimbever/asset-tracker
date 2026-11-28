@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AssetScreen } from "@/components/assets/AssetScreen";
-import { getAsset, listAssets, listAttachments, listEmployees, listEvents, listFieldDefinitions, listLocations, listStatuses, listTypes } from "@/lib/data";
+import type { AssetRecord } from "@/lib/assets/types";
+import { listAssets, listAttachments, listEmployees, listEvents, listFieldDefinitions, listLocations, listStatuses, listTypes } from "@/lib/data";
 import { defaultDueDate } from "@/lib/company/matrix";
 import { todayInZone } from "@/lib/format";
 import { historyNames } from "@/lib/history/display";
@@ -8,21 +9,20 @@ import type { MembershipContext } from "@/lib/data";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function AssetView({
-  assetId,
+  asset,
   membership,
   userId,
   displayName,
 }: {
-  assetId: string;
+  asset: AssetRecord;
   membership: MembershipContext;
   userId: string;
   displayName: string;
 }) {
   const supabase = await createSupabaseServerClient();
   if (!supabase) notFound();
-  const asset = await getAsset(supabase, assetId);
-  if (!asset || asset.organization_id !== membership.organization.id) notFound();
-  const [assets, events, photos, locations, employees, statuses, types, fieldDefinitions] = await Promise.all([
+  if (asset.organization_id !== membership.organization.id) notFound();
+  const [assets, events, photos, locations, employees, statuses, types, fieldDefinitions, company] = await Promise.all([
     listAssets(supabase, membership.organization.id, { includeArchived: true }),
     listEvents(supabase, asset.id),
     listAttachments(supabase, asset.id),
@@ -31,14 +31,14 @@ export async function AssetView({
     listStatuses(supabase, membership.organization.id),
     listTypes(supabase, membership.organization.id),
     listFieldDefinitions(supabase, membership.organization.id),
+    supabase
+      .from("organization_settings")
+      .select("checkout_due_required, default_checkout_days, require_note_broken, require_note_missing")
+      .eq("organization_id", membership.organization.id)
+      .maybeSingle(),
   ]);
   const parent = asset.parent_asset_id ? assets.find((item) => item.id === asset.parent_asset_id) : undefined;
-  const { data: company } = await supabase
-    .from("organization_settings")
-    .select("checkout_due_required, default_checkout_days, require_note_broken, require_note_missing")
-    .eq("organization_id", membership.organization.id)
-    .maybeSingle();
-  const policy = company as {
+  const policy = company.data as {
     checkout_due_required?: boolean;
     default_checkout_days?: number;
     require_note_broken?: boolean;

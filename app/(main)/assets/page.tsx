@@ -29,14 +29,14 @@ export default async function AssetsPage({
   const locationId = params.location && isUuid(params.location) ? params.location : null;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
-  const [assets, locations, employees, statuses] = await Promise.all([
+  const [assets, locations, employees, statuses, photos] = await Promise.all([
     listAssets(supabase, active.organization.id, { includeArchived: true }),
     listLocations(supabase, active.organization.id),
     listEmployees(supabase, active.organization.id),
     listStatuses(supabase, active.organization.id),
+    listCoverPhotos(supabase, active.organization.id),
   ]);
   const statusKey = resolveStatusKey(params.status, statuses);
-  const photos = await listCoverPhotos(supabase, active.organization.id, assets.map((asset) => asset.id));
   const locationNames = Object.fromEntries(locations.map((location) => [location.id, location.name]));
   const assigneeNames = Object.fromEntries(employees.map((person) => [person.id, person.name]));
   return (

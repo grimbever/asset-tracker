@@ -17,30 +17,20 @@ export default async function HistoryPage({
 }: {
   searchParams: Promise<{ q?: string; type?: string; action?: string; event?: string; from?: string; to?: string; id?: string }>;
 }) {
-  const workspace = await loadWorkspace();
+  const [workspace, filters] = await Promise.all([loadWorkspace(), searchParams.then(readHistoryFilters)]);
   const active = workspace?.active;
   if (!workspace || !active) return null;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
-  const ready = await permissionReady(supabase, active.organization.id, PERMISSIONS.historyView);
-  if (
-    !modulePageAllowed({
-      ready,
-      permissions: active.permissions,
-      required: [PERMISSIONS.historyView],
-      legacy: [PERMISSIONS.assetsView, PERMISSIONS.assetsScan],
-    })
-  ) {
-    return <main className="px-4 py-8">You cannot view history.</main>;
-  }
-  const filters = readHistoryFilters(await searchParams);
   let events: AssetEvent[] = [];
   let loadError: string | null = null;
   let subjects: Record<string, string> = {};
   let personLabel: string | null = null;
   let names: HistoryNames = EMPTY_HISTORY_NAMES;
+  let ready = false;
   try {
-    const [history, assets, people, locations, statuses, types, roles] = await Promise.all([
+    const [historyReady, history, assets, people, locations, statuses, types, roles, categories, subscriptions] = await Promise.all([
+      permissionReady(supabase, active.organization.id, PERMISSIONS.historyView),
       searchEvents(supabase, active.organization.id, { ...filters, timeZone: active.organization.timezone }),
       listAssets(supabase, active.organization.id, { includeArchived: true }),
       listEmployees(supabase, active.organization.id),
@@ -48,23 +38,16 @@ export default async function HistoryPage({
       listStatuses(supabase, active.organization.id),
       listTypes(supabase, active.organization.id),
       listRoles(supabase, active.organization.id),
+      listSubscriptionCategories(supabase, active.organization.id).catch(() => []),
+      listSubscriptions(supabase, active.organization.id, false).catch(() => []),
     ]);
+    ready = historyReady;
     events = history.events;
     loadError = history.error;
     for (const asset of assets) subjects[`asset:${asset.id}`] = asset.name;
     for (const person of people) subjects[`employee:${person.id}`] = person.name;
     for (const location of locations) subjects[`location:${location.id}`] = location.name;
-    let categories: { id: string; name: string }[] = [];
-    try {
-      const [loadedCategories, subscriptions] = await Promise.all([
-        listSubscriptionCategories(supabase, active.organization.id),
-        listSubscriptions(supabase, active.organization.id, false),
-      ]);
-      categories = loadedCategories;
-      for (const subscription of subscriptions) subjects[`subscription:${subscription.id}`] = subscription.name;
-    } catch (caught) {
-      console.error("Subscription names for history were skipped.", caught);
-    }
+    for (const subscription of subscriptions) subjects[`subscription:${subscription.id}`] = subscription.name;
     names = historyNames({ people, locations, assets, categories, statuses, types, roles });
     personLabel =
       filters.subjectType === "employee" && filters.subjectId
@@ -74,6 +57,16 @@ export default async function HistoryPage({
     console.error("History page failed.", caught);
     loadError = HISTORY_LOAD_ERROR;
     subjects = {};
+  }
+  if (
+    !modulePageAllowed({
+      ready,
+      permissions: active.permissions,
+      required: [PERMISSIONS.historyView],
+      legacy: [PERMISSIONS.assetsView, PERMISSIONS.assetsScan],
+    })
+  ) {
+    return <main className="px-4 py-8">You cannot view history.</main>;
   }
   return (
     <main className="mx-auto grid max-w-3xl gap-4 px-4 py-6">

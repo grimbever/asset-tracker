@@ -9,6 +9,7 @@ const statusChange = readFileSync("supabase/migrations/20261127000000_status_cha
 const historyLabels = readFileSync("supabase/migrations/20261128000000_history_labels.sql", "utf8");
 const subscriptions = readFileSync("supabase/migrations/20261129000000_subscriptions.sql", "utf8");
 const companySetup = readFileSync("supabase/migrations/20261130000000_company_setup.sql", "utf8");
+const performance = readFileSync("supabase/migrations/20261130120000_performance.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
 const tables = [...migration.matchAll(/create table if not exists public\.(\w+)/g)].map((match) => match[1]);
@@ -42,6 +43,11 @@ describe("schema", () => {
     expect(companySetup).toContain("You cannot remove your own access to company setup.");
     expect(companySetup).toContain("Keep company setup on at least one active role.");
     expect(setup.indexOf(subscriptions)).toBeLessThan(setup.indexOf(companySetup));
+    expect(setup).toContain(performance);
+    expect(performance).toContain("(select auth.uid())");
+    expect(performance).toContain("memberships_user_idx");
+    expect(performance).toContain("role_permissions_org_permission_idx");
+    expect(setup.indexOf(companySetup)).toBeLessThan(setup.indexOf(performance));
     expect(historyLinks).toContain("related_employee_id");
     expect(historyLinks).toContain("function public.search_events");
     expect(historyLinks).toContain("ilike");

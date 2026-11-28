@@ -62,12 +62,8 @@ export async function listCompanyRoles(supabase: Client, organizationId: string)
 
 export type CompanyForm = CompanySettingsInput & { name: string; timezone: string; approverRoleId: string };
 
-export async function loadCompanySettings(supabase: Client, organizationId: string, name: string, timezone: string, emails: string[]): Promise<CompanyForm> {
-  const { data, error } = await supabase.from("organization_settings").select("*").eq("organization_id", organizationId).maybeSingle();
-  if (error || !data) {
-    return { ...DEFAULT_COMPANY_SETTINGS, name, timezone, approverRoleId: "" };
-  }
-  const row = data as Record<string, unknown>;
+export function companyFormFromRow(row: Record<string, unknown> | null, name: string, timezone: string, emails: string[]): CompanyForm {
+  if (!row) return { ...DEFAULT_COMPANY_SETTINGS, name, timezone, approverRoleId: "" };
   return {
     name,
     timezone,
@@ -90,6 +86,12 @@ export async function loadCompanySettings(supabase: Client, organizationId: stri
     inviteExpiryDays: Number(row.invite_expiry_days ?? 14),
     upcomingDays: Array.isArray(row.upcoming_days) ? row.upcoming_days.map((day) => Number(day)) : [...DEFAULT_COMPANY_SETTINGS.upcomingDays],
   };
+}
+
+export async function loadCompanySettings(supabase: Client, organizationId: string, name: string, timezone: string, emails: string[]): Promise<CompanyForm> {
+  const { data, error } = await supabase.from("organization_settings").select("*").eq("organization_id", organizationId).maybeSingle();
+  if (error || !data) return companyFormFromRow(null, name, timezone, emails);
+  return companyFormFromRow(data as Record<string, unknown>, name, timezone, emails);
 }
 
 function settingsPayload(input: CompanyForm) {

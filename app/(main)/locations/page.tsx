@@ -12,7 +12,10 @@ export default async function LocationsPage() {
   if (!workspace || !active) return null;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
-  const ready = await permissionReady(supabase, active.organization.id, PERMISSIONS.locationsView);
+  const [ready, locations] = await Promise.all([
+    permissionReady(supabase, active.organization.id, PERMISSIONS.locationsView),
+    listLocations(supabase, active.organization.id),
+  ]);
   const allowed = modulePageAllowed({
     ready,
     permissions: active.permissions,
@@ -20,7 +23,6 @@ export default async function LocationsPage() {
     legacy: [PERMISSIONS.assetsView, PERMISSIONS.settingsManage],
   });
   if (!allowed) return <main className="px-4 py-8">You cannot view locations.</main>;
-  const locations = await listLocations(supabase, active.organization.id);
   return (
     <main className="mx-auto max-w-xl px-4 py-6">
       <h1 className="mb-4 font-serif text-4xl tracking-tight">Locations</h1>
