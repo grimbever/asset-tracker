@@ -675,13 +675,8 @@ export async function listAttachments(supabase: Client, assetId: string): Promis
     .order("created_at", { ascending: false });
   if (error) fail(error);
   const rows = (data ?? []) as AttachmentRecord[];
-  const withUrls = await Promise.all(
-    rows.map(async (row) => {
-      const { data: signed } = await supabase.storage.from("asset-files").createSignedUrl(row.storage_path, 60 * 60);
-      return { ...row, url: signed?.signedUrl ?? null };
-    }),
-  );
-  return withUrls;
+  const signed = await signedUrlMap(supabase, rows.map((row) => row.storage_path));
+  return rows.map((row) => ({ ...row, url: signed.get(row.storage_path) ?? null }));
 }
 
 export async function uploadAssetPhoto(
@@ -1040,27 +1035,37 @@ async function searchEventsLocally(
   });
 }
 
-export async function listCoverPhotos(supabase: Client, organizationId: string, assetIds: string[]): Promise<Record<string, string>> {
-  if (assetIds.length === 0) return {};
+export async function listCoverPhotos(supabase: Client, organizationId: string): Promise<Record<string, string>> {
   const { data, error } = await supabase
     .from("attachments")
     .select("asset_id, storage_path, created_at")
     .eq("organization_id", organizationId)
-    .in("asset_id", assetIds)
     .order("created_at", { ascending: true });
   if (error) fail(error);
   const first = new Map<string, string>();
   for (const row of data ?? []) {
     const record = row as { asset_id: string; storage_path: string };
-    if (!first.has(record.asset_id)) first.set(record.asset_id, record.storage_path);
+    if (record.asset_id && !first.has(record.asset_id)) first.set(record.asset_id, record.storage_path);
   }
+  const signed = await signedUrlMap(supabase, [...first.values()]);
   const urls: Record<string, string> = {};
-  await Promise.all(
-    [...first.entries()].map(async ([assetId, path]) => {
-      const { data: signed } = await supabase.storage.from("asset-files").createSignedUrl(path, 60 * 60);
-      if (signed?.signedUrl) urls[assetId] = signed.signedUrl;
-    }),
-  );
+  for (const [assetId, path] of first) {
+    const url = signed.get(path);
+    if (url) urls[assetId] = url;
+  }
+  return urls;
+}
+
+async function signedUrlMap(supabase: Client, paths: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(paths.filter(Boolean))];
+  const urls = new Map<string, string>();
+  for (let index = 0; index < unique.length; index += 100) {
+    const batch = unique.slice(index, index + 100);
+    const { data } = await supabase.storage.from("asset-files").createSignedUrls(batch, 60 * 60);
+    for (const item of data ?? []) {
+      if (item.path && item.signedUrl) urls.set(item.path, item.signedUrl);
+    }
+  }
   return urls;
 }
 

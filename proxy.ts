@@ -1,11 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { sessionNeedsRefresh } from "@/lib/supabase/session";
 import { supabasePublicConfig } from "@/lib/supabase/env";
 
 export async function proxy(request: NextRequest) {
   try {
     const config = supabasePublicConfig();
     if (!config) return NextResponse.next({ request });
+    if (!sessionNeedsRefresh(request.cookies.getAll(), Date.now())) {
+      return NextResponse.next({ request });
+    }
 
     let response = NextResponse.next({ request });
     const supabase = createServerClient(config.url, config.key, {

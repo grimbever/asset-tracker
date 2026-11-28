@@ -42,7 +42,7 @@ export default async function TagPage({ params }: { params: Promise<{ tag: strin
   if (!membership) notFound();
   return (
     <AssetView
-      assetId={asset.id}
+      asset={asset}
       membership={membership}
       userId={workspace.userId}
       displayName={workspace.displayName}

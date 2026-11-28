@@ -25,30 +25,19 @@ export default async function DashboardPage() {
   if (!supabase) return null;
   const canView = can(active.permissions, PERMISSIONS.assetsView);
   const canSeeSubscriptions = can(active.permissions, PERMISSIONS.subscriptionsView) || can(active.permissions, PERMISSIONS.subscriptionsManage);
-  const [assets, people, fields, maintenance, statuses] = canView
-    ? await Promise.all([
-        listAssets(supabase, active.organization.id, { includeArchived: true }),
-        listEmployees(supabase, active.organization.id),
-        listFieldDefinitions(supabase, active.organization.id),
-        listOpenMaintenance(supabase, active.organization.id),
-        listStatuses(supabase, active.organization.id),
-      ])
-    : [[], [], [], [], []];
-  let subscriptions: { id: string; name: string; renews_on: string | null; notice_days: number | null; status: string; archived_at: string | null }[] = [];
+  const [assets, people, fields, maintenance, statuses, subscriptions, settingsRow] = await Promise.all([
+    canView ? listAssets(supabase, active.organization.id, { includeArchived: true }) : Promise.resolve([]),
+    canView ? listEmployees(supabase, active.organization.id) : Promise.resolve([]),
+    canView ? listFieldDefinitions(supabase, active.organization.id) : Promise.resolve([]),
+    canView ? listOpenMaintenance(supabase, active.organization.id) : Promise.resolve([]),
+    canView ? listStatuses(supabase, active.organization.id) : Promise.resolve([]),
+    canSeeSubscriptions
+      ? listSubscriptions(supabase, active.organization.id, false).catch(() => [])
+      : Promise.resolve([]),
+    supabase.from("organization_settings").select("upcoming_days").eq("organization_id", active.organization.id).maybeSingle(),
+  ]);
   let upcomingEdges: number[] = [...DEFAULT_UPCOMING_DAYS];
-  if (canSeeSubscriptions) {
-    try {
-      subscriptions = await listSubscriptions(supabase, active.organization.id, false);
-    } catch {
-      subscriptions = [];
-    }
-  }
-  const { data: settingsRow } = await supabase
-    .from("organization_settings")
-    .select("upcoming_days")
-    .eq("organization_id", active.organization.id)
-    .maybeSingle();
-  const storedEdges = (settingsRow as { upcoming_days?: number[] } | null)?.upcoming_days;
+  const storedEdges = (settingsRow.data as { upcoming_days?: number[] } | null)?.upcoming_days;
   if (storedEdges && storedEdges.length > 0) upcomingEdges = storedEdges;
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const upcoming = collectUpcoming(

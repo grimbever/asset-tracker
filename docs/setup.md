@@ -69,7 +69,8 @@ Do not put the **service_role** key in the public site settings. This version do
    | `NOTIFY_FROM` | Optional. A sender on a domain you verified in Resend, such as `Asset Tracker <assets@yourdomain.com>`. |
 
 5. Set `NEXT_PUBLIC_SITE_URL` for **Production** only. Leave it empty on Preview. Preview deployments then use their own address for sign-in links.
-6. Deploy.
+6. In the project settings, open **Functions** and set **Function Region** to **Portland, USA (pdx1)**. The database for this project is in AWS `us-west-2` (Oregon). The site was running in Washington, D.C. (`iad1`), so every page waited on a cross-country round trip. `vercel.json` already asks for `pdx1`; confirm the dashboard matches it.
+7. Deploy.
 
 If those variables are missing, the site still opens. It shows a setup screen instead of an error.
 
@@ -77,7 +78,7 @@ If those variables are missing, the site still opens. It shows a setup screen in
 
 ### If the database already exists
 
-Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, the super-user permission, the history search, the invite-email history entry, history names and status labels, subscriptions, and company setup. It also fills in the person on older check-out and check-in rows, lets a signed-in member run that search, archives the Retired status, marks any Retired item Disposed with a history note, and lets history search match people's names, status labels, and subscription fields. It does not erase equipment, people, invites, subscriptions, or company settings. It fills in the current access for people, locations, history, kits, and maintenance so existing roles keep working, and it adds the company defaults (14-day invites, optional due dates, tag prefix AT). Invite emails and subscription reminders use the same `RESEND_API_KEY` and `NOTIFY_FROM` settings as status alerts. If those are empty, the invite link is still shown to copy and reminder email is skipped.
+Paste `supabase/setup.sql` into the SQL Editor and run it again. That adds statuses, types, custom fields, archive columns, the super-user permission, the history search, the invite-email history entry, history names and status labels, subscriptions, company setup, and the indexes that speed up each page. It also fills in the person on older check-out and check-in rows, lets a signed-in member run that search, archives the Retired status, marks any Retired item Disposed with a history note, and lets history search match people's names, status labels, and subscription fields. It does not erase equipment, people, invites, subscriptions, or company settings. It fills in the current access for people, locations, history, kits, and maintenance so existing roles keep working, and it adds the company defaults (14-day invites, optional due dates, tag prefix AT). Invite emails and subscription reminders use the same `RESEND_API_KEY` and `NOTIFY_FROM` settings as status alerts. If those are empty, the invite link is still shown to copy and reminder email is skipped.
 
 ### Auth email through Resend
 

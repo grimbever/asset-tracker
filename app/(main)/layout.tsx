@@ -8,8 +8,6 @@ import { loadWorkspace } from "@/lib/data/workspace";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const dynamic = "force-dynamic";
-
 export default async function MainLayout({ children }: { children: ReactNode }) {
   if (!isSupabaseConfigured()) redirect("/setup");
   const workspace = await loadWorkspace();

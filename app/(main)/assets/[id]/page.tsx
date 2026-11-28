@@ -16,7 +16,7 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
   if (!membership) notFound();
   return (
     <AssetView
-      assetId={asset.id}
+      asset={asset}
       membership={membership}
       userId={workspace.userId}
       displayName={workspace.displayName}
