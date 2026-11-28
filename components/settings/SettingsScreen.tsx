@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { sendInviteEmail } from "@/app/invite/actions";
 import { CreateOrgForm } from "@/components/shell/CreateOrgForm";
@@ -27,6 +28,7 @@ export function SettingsScreen({
   members,
   invites,
   canManage,
+  canSetup = false,
 }: {
   userId: string;
   email: string;
@@ -36,6 +38,7 @@ export function SettingsScreen({
   members: MemberRecord[];
   invites: InviteRecord[];
   canManage: boolean;
+  canSetup?: boolean;
 }) {
   const [name, setName] = useState(displayName);
   const [orgName, setOrgName] = useState(organization.name);
@@ -157,6 +160,14 @@ export function SettingsScreen({
           </ul>
         ) : null}
       </section>
+
+      {canSetup ? (
+        <section className="rounded-3xl bg-card p-4">
+          <h2 className="font-serif text-2xl">Company setup</h2>
+          <p className="mt-2 text-sm text-muted">Roles, permissions, tags, notifications, and the other organization defaults.</p>
+          <Link href="/settings/company" className="mt-3 inline-flex min-h-12 items-center rounded-full bg-ink px-4 text-white">Open company setup</Link>
+        </section>
+      ) : null}
 
       {canManage ? (
         <form className="grid gap-3" onSubmit={(event) => void saveOrg(event)}>

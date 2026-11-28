@@ -13,10 +13,12 @@ export default async function LabelsPage() {
   }
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
-  const [assets, locations] = await Promise.all([
+  const [assets, locations, templateRow] = await Promise.all([
     listAssets(supabase, active.organization.id),
     listLocations(supabase, active.organization.id),
+    supabase.from("organization_settings").select("label_template").eq("organization_id", active.organization.id).maybeSingle(),
   ]);
+  const labelTemplate = (templateRow.data as { label_template?: string } | null)?.label_template;
   return (
     <main className="mx-auto max-w-xl px-4 py-6">
       <h1 className="font-serif text-4xl tracking-tight">Labels</h1>
@@ -26,6 +28,7 @@ export default async function LabelsPage() {
       <LabelPicker
         assets={assets}
         locationNames={Object.fromEntries(locations.map((location) => [location.id, location.name]))}
+        initialTemplate={labelTemplate}
       />
     </main>
   );

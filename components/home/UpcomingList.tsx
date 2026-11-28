@@ -1,15 +1,25 @@
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
-import { UPCOMING_BUCKETS, daysRemainingLabel, groupUpcoming, type UpcomingItem } from "@/lib/upcoming";
+import { UPCOMING_BUCKETS, daysRemainingLabel, groupUpcoming, upcomingBuckets, type UpcomingItem } from "@/lib/upcoming";
 
-export function UpcomingList({ items, timeZone }: { items: UpcomingItem[]; timeZone: string }) {
+export function UpcomingList({
+  items,
+  timeZone,
+  edges,
+}: {
+  items: UpcomingItem[];
+  timeZone: string;
+  edges?: readonly number[];
+}) {
   const groups = groupUpcoming(items);
+  const buckets = edges ? upcomingBuckets(edges) : UPCOMING_BUCKETS;
+  const horizon = buckets[buckets.length - 1]?.label.replace(/^Next /, "").replace(/ days$/, "") ?? "180";
   return (
     <section className="grid gap-3">
       <h2 className="font-serif text-2xl">Upcoming</h2>
-      {items.length === 0 ? <p className="text-sm text-muted">Nothing due in the next 180 days.</p> : null}
-      {UPCOMING_BUCKETS.map((bucket) => {
-        const rows = groups[bucket.id];
+      {items.length === 0 ? <p className="text-sm text-muted">Nothing due in the next {horizon.includes("–") ? horizon.split("–").pop() : horizon} days.</p> : null}
+      {buckets.map((bucket) => {
+        const rows = groups[bucket.id] ?? [];
         return (
           <details key={bucket.id} open={bucket.id === "overdue" && rows.length > 0} className="rounded-3xl bg-card">
             <summary className="cursor-pointer list-none px-4 py-3 font-medium">

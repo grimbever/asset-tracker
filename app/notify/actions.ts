@@ -37,7 +37,20 @@ export async function deliverNotification(eventId: string): Promise<{ sent: bool
         .maybeSingle();
       statusNotify = Boolean((status as { notify?: boolean } | null)?.notify);
     }
-    if (!shouldEmail({ eventType: row.event_type, statusKey, statusNotify })) {
+    const { data: company } = await supabase
+      .from("organization_settings")
+      .select("notify_checkout, notify_checkin, notify_status, accent_color")
+      .eq("organization_id", row.organization_id)
+      .maybeSingle();
+    const flags = company as { notify_checkout?: boolean; notify_checkin?: boolean; notify_status?: boolean; accent_color?: string } | null;
+    if (!shouldEmail({
+      eventType: row.event_type,
+      statusKey,
+      statusNotify,
+      notifyCheckout: flags?.notify_checkout,
+      notifyCheckin: flags?.notify_checkin,
+      notifyStatus: flags?.notify_status,
+    })) {
       return { sent: false, reason: "this change does not send email" };
     }
 
@@ -83,6 +96,7 @@ export async function deliverNotification(eventId: string): Promise<{ sent: bool
         to: recipients,
         subject,
         text,
+        html: `<div style="border-top:4px solid ${flags?.accent_color && /^#[0-9a-fA-F]{6}$/.test(flags.accent_color) ? flags.accent_color : "#1d6b4f"};padding-top:12px">${text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", "<br>")}</div>`,
       }),
     });
     if (!response.ok) {

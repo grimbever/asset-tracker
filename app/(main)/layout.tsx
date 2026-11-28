@@ -6,6 +6,7 @@ import { ShellAccount } from "@/components/shell/ShellAccount";
 import { APP_NAME } from "@/lib/config";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -28,5 +29,14 @@ export default async function MainLayout({ children }: { children: ReactNode }) 
       </main>
     );
   }
-  return <AppShell workspace={workspace}>{children}</AppShell>;
+  const supabase = await createSupabaseServerClient();
+  const { data: brandRow } = supabase
+    ? await supabase.from("organization_settings").select("accent_color, logo_url").eq("organization_id", workspace.active.organization.id).maybeSingle()
+    : { data: null };
+  const brand = brandRow as { accent_color?: string; logo_url?: string } | null;
+  return (
+    <AppShell workspace={workspace} accent={brand?.accent_color} logoUrl={brand?.logo_url}>
+      {children}
+    </AppShell>
+  );
 }

@@ -7,7 +7,9 @@ import type { AssetEvent } from "@/lib/assets/events";
 import { loadWorkspace } from "@/lib/data/workspace";
 import { EMPTY_HISTORY_NAMES, historyNames, type HistoryNames } from "@/lib/history/display";
 import { HISTORY_LOAD_ERROR, readHistoryFilters } from "@/lib/history/query";
-import { PERMISSIONS, can } from "@/lib/permissions";
+import { permissionReady } from "@/lib/company/data";
+import { modulePageAllowed } from "@/lib/company/matrix";
+import { PERMISSIONS } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function HistoryPage({
@@ -18,12 +20,20 @@ export default async function HistoryPage({
   const workspace = await loadWorkspace();
   const active = workspace?.active;
   if (!workspace || !active) return null;
-  if (!can(active.permissions, PERMISSIONS.assetsView) && !can(active.permissions, PERMISSIONS.assetsScan)) {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null;
+  const ready = await permissionReady(supabase, active.organization.id, PERMISSIONS.historyView);
+  if (
+    !modulePageAllowed({
+      ready,
+      permissions: active.permissions,
+      required: [PERMISSIONS.historyView],
+      legacy: [PERMISSIONS.assetsView, PERMISSIONS.assetsScan],
+    })
+  ) {
     return <main className="px-4 py-8">You cannot view history.</main>;
   }
   const filters = readHistoryFilters(await searchParams);
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return null;
   let events: AssetEvent[] = [];
   let loadError: string | null = null;
   let subjects: Record<string, string> = {};

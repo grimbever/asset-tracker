@@ -8,6 +8,7 @@ const inviteSent = readFileSync("supabase/migrations/20261127000000_invite_sent.
 const statusChange = readFileSync("supabase/migrations/20261127000000_status_change.sql", "utf8");
 const historyLabels = readFileSync("supabase/migrations/20261128000000_history_labels.sql", "utf8");
 const subscriptions = readFileSync("supabase/migrations/20261129000000_subscriptions.sql", "utf8");
+const companySetup = readFileSync("supabase/migrations/20261130000000_company_setup.sql", "utf8");
 const setup = readFileSync("supabase/setup.sql", "utf8");
 
 const tables = [...migration.matchAll(/create table if not exists public\.(\w+)/g)].map((match) => match[1]);
@@ -36,6 +37,11 @@ describe("schema", () => {
     expect(subscriptions).toContain("from public.subscription_categories c");
     expect(subscriptions).toContain("Pending renewal");
     expect(setup.indexOf(historyLabels)).toBeLessThan(setup.indexOf(subscriptions));
+    expect(setup).toContain(companySetup);
+    expect(companySetup).toContain("function public.save_company_settings");
+    expect(companySetup).toContain("You cannot remove your own access to company setup.");
+    expect(companySetup).toContain("Keep company setup on at least one active role.");
+    expect(setup.indexOf(subscriptions)).toBeLessThan(setup.indexOf(companySetup));
     expect(historyLinks).toContain("related_employee_id");
     expect(historyLinks).toContain("function public.search_events");
     expect(historyLinks).toContain("ilike");

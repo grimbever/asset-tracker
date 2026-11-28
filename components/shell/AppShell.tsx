@@ -14,24 +14,43 @@ const links = [
   { href: "/assets", label: "Assets", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
   { href: "/scan", label: "Scan", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsScan) },
   { href: "/labels", label: "Labels", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
-  { href: "/people", label: "People", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
-  { href: "/locations", label: "Locations", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
+  { href: "/people", label: "People", show: (permissions: string[]) => can(permissions, PERMISSIONS.peopleView) || can(permissions, PERMISSIONS.peopleManage) || can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
+  { href: "/locations", label: "Locations", show: (permissions: string[]) => can(permissions, PERMISSIONS.locationsView) || can(permissions, PERMISSIONS.locationsManage) || can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.settingsManage) },
   { href: "/subscriptions", label: "Subscriptions", show: (permissions: string[]) => can(permissions, PERMISSIONS.subscriptionsView) || can(permissions, PERMISSIONS.subscriptionsManage) },
-  { href: "/history", label: "History", show: (permissions: string[]) => can(permissions, PERMISSIONS.assetsView) },
+  { href: "/history", label: "History", show: (permissions: string[]) => can(permissions, PERMISSIONS.historyView) || can(permissions, PERMISSIONS.assetsView) || can(permissions, PERMISSIONS.assetsScan) },
   { href: "/lookups", label: "Lookups", show: (permissions: string[]) => can(permissions, PERMISSIONS.settingsManage) },
+  { href: "/settings/company", label: "Company", show: (permissions: string[]) => can(permissions, PERMISSIONS.settingsManage) },
   { href: "/settings", label: "Settings", show: () => true },
 ];
 
-export function AppShell({ workspace, children }: { workspace: Workspace; children: ReactNode }) {
+export function AppShell({
+  workspace,
+  children,
+  accent,
+  logoUrl,
+}: {
+  workspace: Workspace;
+  children: ReactNode;
+  accent?: string;
+  logoUrl?: string;
+}) {
   const pathname = usePathname();
   const active = workspace.active;
   const permissions = active?.permissions ?? [];
   const visible = links.filter((link) => link.show(permissions));
 
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[220px_1fr]">
+    <div className="min-h-screen md:grid md:grid-cols-[220px_1fr]" style={accent && /^#[0-9a-fA-F]{6}$/.test(accent) ? { borderTop: `4px solid ${accent}` } : undefined}>
       <aside className="app-chrome sticky top-0 hidden h-dvh flex-col border-r border-line bg-card md:flex">
         <div className="px-4 py-5">
+          {logoUrl && /^https:\/\//i.test(logoUrl) ? (
+            <span
+              role="img"
+              aria-label="Company logo"
+              className="mb-2 block h-8 bg-contain bg-left bg-no-repeat"
+              style={{ backgroundImage: `url("${logoUrl.replaceAll('"', "")}")` }}
+            />
+          ) : null}
           <p className="font-serif text-2xl tracking-tight">{APP_NAME}</p>
           <p className="mt-1 truncate text-sm text-muted">{active?.organization.name}</p>
         </div>
