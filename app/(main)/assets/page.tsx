@@ -10,7 +10,7 @@ import Link from "next/link";
 export default async function AssetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ person?: string; location?: string; status?: string }>;
+  searchParams: Promise<{ person?: string; location?: string; status?: string; warranty?: string }>;
 }) {
   const workspace = await loadWorkspace();
   const active = workspace?.active;
@@ -37,6 +37,8 @@ export default async function AssetsPage({
     listCoverPhotos(supabase, active.organization.id),
   ]);
   const statusKey = resolveStatusKey(params.status, statuses);
+  const warrantySoon = params.warranty === "soon";
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: active.organization.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const locationNames = Object.fromEntries(locations.map((location) => [location.id, location.name]));
   const assigneeNames = Object.fromEntries(employees.map((person) => [person.id, person.name]));
   return (
@@ -53,6 +55,8 @@ export default async function AssetsPage({
         personId={personId}
         locationId={locationId}
         statusKey={statusKey}
+        warrantySoon={warrantySoon}
+        today={today}
       />
     </main>
   );

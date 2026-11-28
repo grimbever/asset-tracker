@@ -52,6 +52,10 @@ export type AssetRecord = {
   checkout_as_unit: boolean;
   custom_fields: Record<string, string>;
   archived_at: string | null;
+  warranty_start?: string | null;
+  warranty_end?: string | null;
+  warranty_provider?: string | null;
+  warranty_notes?: string | null;
   created_at: string;
   updated_at: string;
 };

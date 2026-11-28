@@ -1,6 +1,6 @@
 import { PERMISSIONS, ROLE_SEEDS, type Permission } from "@/lib/permissions";
 
-export const LEVELS = ["none", "view", "edit", "manage"] as const;
+export const LEVELS = ["none", "view", "edit", "use", "manage"] as const;
 export type AccessLevel = (typeof LEVELS)[number];
 
 export type AccessModule = {
@@ -106,6 +106,20 @@ export const ACCESS_MODULES: readonly AccessModule[] = [
     enabled: true,
   },
   {
+    id: "inventory",
+    label: "Inventory",
+    hint: "Snacks, paper, and other consumables. Edit can receive and use stock. Manage can archive items.",
+    levels: ["none", "view", "edit", "manage"],
+    universe: [PERMISSIONS.inventoryView, PERMISSIONS.inventoryEdit, PERMISSIONS.inventoryManage],
+    grants: {
+      none: [],
+      view: [PERMISSIONS.inventoryView],
+      edit: [PERMISSIONS.inventoryView, PERMISSIONS.inventoryEdit],
+      manage: [PERMISSIONS.inventoryView, PERMISSIONS.inventoryEdit, PERMISSIONS.inventoryManage],
+    },
+    enabled: true,
+  },
+  {
     id: "settings",
     label: "Settings and lookups",
     hint: "Company setup, statuses, types, and custom fields.",
@@ -126,11 +140,15 @@ export const ACCESS_MODULES: readonly AccessModule[] = [
   {
     id: "kiosk",
     label: "Kiosk",
-    hint: "A storeroom screen. Not available in this version.",
-    levels: ["none", "manage"],
-    universe: [PERMISSIONS.kioskManage],
-    grants: { none: [], manage: [PERMISSIONS.kioskManage] },
-    enabled: false,
+    hint: "The storeroom tablet. Use can record what people take. Manage can set PINs.",
+    levels: ["none", "use", "manage"],
+    universe: [PERMISSIONS.kioskUse, PERMISSIONS.kioskManage],
+    grants: {
+      none: [],
+      use: [PERMISSIONS.kioskUse],
+      manage: [PERMISSIONS.kioskUse, PERMISSIONS.kioskManage],
+    },
+    enabled: true,
   },
   {
     id: "work_orders",
@@ -151,11 +169,12 @@ export function levelLabel(level: AccessLevel): string {
   if (level === "none") return "None";
   if (level === "view") return "View";
   if (level === "edit") return "Edit";
+  if (level === "use") return "Use";
   return "Manage";
 }
 
 export function inferLevel(permissions: readonly string[], module: AccessModule): AccessLevel {
-  const ranked = (["manage", "edit", "view"] as const).filter((level) => module.levels.includes(level));
+  const ranked = (["manage", "edit", "use", "view"] as const).filter((level) => module.levels.includes(level));
   for (const level of ranked) {
     const grant = module.grants[level] ?? [];
     if (grant.length > 0 && grant.every((permission) => permissions.includes(permission))) return level;

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { notifySkipReason } from "@/lib/notify/plan";
+import { notificationRecipients, notifySkipReason } from "@/lib/notify/plan";
 import { supabasePublicConfig } from "@/lib/supabase/env";
 
 export const dynamic = "force-dynamic";
@@ -94,5 +94,45 @@ export async function GET(request: Request) {
     }
     sent += 1;
   }
-  return Response.json({ ok: true, sent });
+  let warrantySent = 0;
+  const { data: warrantyRows, error: warrantyError } = await supabase.rpc("claim_warranty_reminders", { p_today: today });
+  if (warrantyError) {
+    console.info("warranty reminders skipped", warrantyError.message);
+  } else {
+    for (const row of (warrantyRows ?? []) as { organization_id: string; asset_id: string; name: string; tag_id: string; warranty_end: string; days_before: number; organization_name: string }[]) {
+      const { data: members } = await supabase.from("memberships").select("user_id, roles(key)").eq("organization_id", row.organization_id);
+      const adminIds = (members ?? [])
+        .filter((member) => {
+          const role = (member as { roles: { key: string } | { key: string }[] | null }).roles;
+          const key = Array.isArray(role) ? role[0]?.key : role?.key;
+          return key === "admin";
+        })
+        .map((member) => String((member as { user_id: string }).user_id));
+      let adminEmails: string[] = [];
+      if (adminIds.length) {
+        const { data: profiles } = await supabase.from("profiles").select("email").in("id", adminIds);
+        adminEmails = (profiles ?? []).map((profile) => String((profile as { email?: string }).email ?? ""));
+      }
+      const { data: customRows } = await supabase.from("notification_recipients").select("email").eq("organization_id", row.organization_id);
+      const custom = (customRows ?? []).map((item) => String((item as { email: string }).email));
+      const recipients = notificationRecipients(custom, adminEmails);
+      if (recipients.length === 0) continue;
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${inlinedResendKey().trim()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: inlinedNotifyFrom().trim(),
+          to: recipients,
+          subject: `${row.name} warranty ends in ${row.days_before} days`,
+          text: `${row.name} (${row.tag_id}) at ${row.organization_name} is under warranty until ${row.warranty_end}.`,
+        }),
+      });
+      if (!response.ok) {
+        await supabase.rpc("release_warranty_reminder", { p_asset_id: row.asset_id, p_warranty_end: row.warranty_end, p_days_before: row.days_before });
+        continue;
+      }
+      warrantySent += 1;
+    }
+  }
+  return Response.json({ ok: true, sent, warrantySent });
 }
